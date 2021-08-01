@@ -147,7 +147,7 @@ class BTree:
         r = self.rootNode
         self.delete_in_node(r, an_item, search_result)
 
-    def delete_in_node(self, a_node, an_item, search_result):
+    def delete_in_node(self, a_node, an_item, search_result):  # todo:目前只是通过实验确认了插入似乎可以正常运行, 删除查找等还没看.
         """从a_node中删除元素an_item, 参考信息为search_result"""
         if a_node.index == search_result['fileIndex']:
             i = search_result['nodeIndex']  # nodeIndex是在Node里面的索引
