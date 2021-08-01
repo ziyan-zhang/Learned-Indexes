@@ -38,8 +38,11 @@ class Parameter:
 
 # parameter pool
 class ParameterPool(Enum):
+    # RANDOM = Parameter(stages=[1, 10], cores=[[1, 1], [1, 1]], train_steps=[20000, 20000],
+    #                    batch_sizes=[50, 50], learning_rates=[0.0001, 0.0001], keep_ratios=[1.0, 1.0])
+    # 改一下batch_size
     RANDOM = Parameter(stages=[1, 10], cores=[[1, 1], [1, 1]], train_steps=[20000, 20000],
-                       batch_sizes=[50, 50], learning_rates=[0.0001, 0.0001], keep_ratios=[1.0, 1.0])
+                       batch_sizes=[100, 100], learning_rates=[0.0001, 0.0001], keep_ratios=[1.0, 1.0])
     LOGNORMAL = Parameter(stages=[1, 100], cores=[[1, 16, 16, 1], [1, 8, 1]], train_steps=[2000, 400],
                           batch_sizes=[100, 50], learning_rates=[0.0001, 0.001], keep_ratios=[1.0, 0.9])
     EXPONENTIAL = Parameter(stages=[1, 100], cores=[[1, 8, 1], [1, 8, 1]], train_steps=[30000, 20000],
@@ -83,7 +86,9 @@ class AbstractNN:
         tmp_res = np.mat(input_key) * np.mat(self.weights[0]) + np.mat(self.bias[0])
         for i in range(1, len(self.core_nums) - 1):
             tmp_res = np.mat(tmp_res) * np.mat(self.weights[i]) + np.mat(self.bias[i])
-        return int(round(tmp_res[0][0]))
+        # return int(round(tmp_res[0][0]))
+        return int(np.round(tmp_res[0][0]))  # 使用numpy的东西可以直接对matrix进行操作应该是
+
 
 # Netural Network Model
 class TrainedNN:
@@ -150,7 +155,7 @@ class TrainedNN:
                 err = self.sess.run(self.cross_entropy, feed_dict={self.h_fc_drop[0]: np.array([self.train_x]).T,
                                                                    self.y_: np.array([self.train_y]).T,
                                                                    self.keep_prob: 1.0})
-                print("cross_entropy: %f" % err)
+                # print("cross_entropy: %f" % err)  # 把这句话注释掉
                 if step == 0:
                     last_err = err 
                 # use threhold to stop train 

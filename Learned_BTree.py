@@ -7,9 +7,27 @@ from btree import BTree
 from data.create_data import create_data, Distribution
 import time, gc, json
 import os, sys, getopt
+from tqdm import tqdm
+import numpy as np
+
+# 为后面186行的保存做准备
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        else:
+            return super(NpEncoder, self).default(obj)
+# ————————————————
+# 版权声明：本文为CSDN博主「Zhou_yongzhe」的原创文章，遵循CC 4.0 BY-SA版权协议，转载请附上原文出处链接及本声明。
+# 原文链接：https://blog.csdn.net/Zhou_yongzhe/article/details/87692052
 
 # Setting 
-BLOCK_SIZE = 100
+# BLOCK_SIZE = 100
+BLOCK_SIZE = 1000
 TOTAL_NUMBER = 300000
 
 # data files
@@ -54,11 +72,12 @@ def hybrid_training(threshold, use_threshold, stage_nums, core_nums, train_step_
     tmp_inputs = [[[] for i in range(col_num)] for i in range(stage_length)]
     tmp_labels = [[[] for i in range(col_num)] for i in range(stage_length)]
     index = [[None for i in range(col_num)] for i in range(stage_length)]
+
     tmp_inputs[0][0] = train_data_x
     tmp_labels[0][0] = train_data_y
     test_inputs = test_data_x
     for i in range(0, stage_length):
-        for j in range(0, stage_nums[i]):
+        for j in tqdm(range(0, stage_nums[i])):
             if len(tmp_labels[i][j]) == 0:
                 continue
             inputs = tmp_inputs[i][j]
@@ -128,7 +147,9 @@ def train_index(threshold, use_threshold, distribution, path):
         return
     stage_set = parameter.stage_set
     # set number of models for second stage (1 model deal with 10000 records)
-    stage_set[1] = int(round(data.shape[0] / 10000))
+    # todo: 在调试: 下面这句话是个自适应的操作, 我们把他隐掉, 使用自带的10个模型
+    # stage_set[1] = int(round(data.shape[0] / 10000))
+
     core_set = parameter.core_set
     train_step_set = parameter.train_step_set
     batch_size_set = parameter.batch_size_set
@@ -138,10 +159,10 @@ def train_index(threshold, use_threshold, distribution, path):
     global TOTAL_NUMBER
     TOTAL_NUMBER = data.shape[0]
     for i in range(data.shape[0]):
-        train_set_x.append(data.ix[i, 0])
-        train_set_y.append(data.ix[i, 1])
-        #train_set_x.append(data.ix[i, 0])
-        #train_set_y.append(data.ix[i, 1])
+        # train_set_x.append(data.ix[i, 0])
+        # train_set_y.append(data.ix[i, 1])
+        train_set_x.append(data.iloc[i, 0])
+        train_set_y.append(data.iloc[i, 1])
 
     test_set_x = train_set_x[:]
     test_set_y = train_set_y[:]     
@@ -201,7 +222,9 @@ def train_index(threshold, use_threshold, distribution, path):
                                   "bias": trained_index[1][ind].weights}
     result = [{"stage": 1, "parameters": result_stage1}, {"stage": 2, "parameters": result_stage2}]
 
-    with open("model/" + pathString[distribution] + "/full_train/NN/" + str(TOTAL_NUMBER) + ".json", "wb") as jsonFile:
+    # with open("model/" + pathString[distribution] + "/full_train/NN/" + str(TOTAL_NUMBER) + ".json", "wb") as jsonFile:
+    with open("model/" + pathString[distribution] + "/full_train/NN/" + str(TOTAL_NUMBER) + ".json",
+                  "w") as jsonFile:
         json.dump(result, jsonFile)
 
     # wirte performance into files
@@ -209,7 +232,7 @@ def train_index(threshold, use_threshold, distribution, path):
                       "store size": os.path.getsize(
                           "model/" + pathString[distribution] + "/full_train/NN/" + str(TOTAL_NUMBER) + ".json")}
     with open("performance/" + pathString[distribution] + "/full_train/NN/" + str(TOTAL_NUMBER) + ".json",
-              "wb") as jsonFile:
+              "w") as jsonFile:
         json.dump(performance_NN, jsonFile)
 
     del trained_index
@@ -258,8 +281,8 @@ def train_index(threshold, use_threshold, distribution, path):
         result.append(tmp)
 
     with open("model/" + pathString[distribution] + "/full_train/BTree/" + str(TOTAL_NUMBER) + ".json",
-              "wb") as jsonFile:
-        json.dump(result, jsonFile)
+              "w") as jsonFile:
+        json.dump(result, jsonFile, cls=NpEncoder)
 
     # write performance into files
     performance_BTree = {"type": "BTree", "build time": build_time, "search time": search_time,
@@ -267,7 +290,7 @@ def train_index(threshold, use_threshold, distribution, path):
                          "store size": os.path.getsize(
                              "model/" + pathString[distribution] + "/full_train/BTree/" + str(TOTAL_NUMBER) + ".json")}
     with open("performance/" + pathString[distribution] + "/full_train/BTree/" + str(TOTAL_NUMBER) + ".json",
-              "wb") as jsonFile:
+              "w") as jsonFile:
         json.dump(performance_BTree, jsonFile)
 
     del bt
@@ -367,14 +390,14 @@ def sample_train(threshold, use_threshold, distribution, training_percent, path)
     result = [{"stage": 1, "parameters": result_stage1}, {"stage": 2, "parameters": result_stage2}]
 
     with open("model/" + pathString[distribution] + "/sample_train/NN/" + str(training_percent) + ".json",
-              "wb") as jsonFile:
+              "w") as jsonFile:
         json.dump(result, jsonFile)
 
     performance_NN = {"type": "NN", "build time": learn_time, "search time": search_time, "average error": mean_error,
                       "store size": os.path.getsize(
                           "model/" + pathString[distribution] + "/sample_train/NN/" + str(training_percent) + ".json")}
     with open("performance/" + pathString[distribution] + "/sample_train/NN/" + str(training_percent) + ".json",
-              "wb") as jsonFile:
+              "w") as jsonFile:
         json.dump(performance_NN, jsonFile)
 
     del trained_index
@@ -403,6 +426,10 @@ def show_help_message(msg):
 
 # command line
 def main(argv):
+    # print('现在打印argv')
+    # print(argv)
+    # print('现在打印argv结束了')
+
     distribution = None
     per = 0.5
     num = 300000
@@ -417,6 +444,7 @@ def main(argv):
         sys.exit(2)
     for opt, arg in opts:
         arg = str(arg).lower()
+        print(opt, arg)
         if opt == '-h':
             show_help_message('all')
             return
@@ -495,4 +523,6 @@ def main(argv):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    # 原作者的代码是命令行方式, 不方便调试, 其实也就是一个列表而已
+    my_argv = ['-t', 'full', '-d', 'random', '-n', '100000', '-c', '1']
+    main(my_argv)

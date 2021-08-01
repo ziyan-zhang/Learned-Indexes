@@ -5,7 +5,7 @@ import csv
 import random
 
 # SIZE = 100000
-SIZE = 100
+SIZE = 10000
 BLOCK_SIZE = 1000
 
 
@@ -65,7 +65,7 @@ def create_data(distribution, data_size=SIZE):  # SIZE = 100000, BLOCK_SIZE = 10
 
     res_path = filePath[distribution]
     data.sort()
-    with open(res_path, 'wb', newline='') as csvFile:
+    with open(res_path, 'w', newline='') as csvFile:
         csv_writer = csv.writer(csvFile)
         i = 0
         if distribution == Distribution.EXPONENTIAL:
@@ -164,4 +164,6 @@ def create_data_storage(distribution, learning_percent=0.5, data_size=SIZE):
 
 
 if __name__ == "__main__":
-    create_data_storage(Distribution.NORMAL)
+    # create_data_storage(Distribution.RANDOM)
+    create_data(Distribution.RANDOM)
+
