@@ -6,6 +6,8 @@ import pandas as pd
 class BTreeNode:
     def __init__(self, degree=2, number_of_keys=0, is_leaf=True, items=None, children=None,
                  index=None):
+        # 度数：在树中，每个节点的子节点（子树）的个数就称为该节点的度（degree）。
+        # 阶数：（Order）阶定义为一个节点的子节点数目的最大值。（自带最大值属性）
         self.isLeaf = is_leaf
         self.numberOfKeys = number_of_keys
         self.index = index
@@ -41,6 +43,8 @@ class BTree:
         if nodes is None:
             nodes = {}
         self.degree = degree
+        # 度数：在树中，每个节点的子节点（子树）的个数就称为该节点的度（degree）。
+        # 阶数：（Order）阶定义为一个节点的子节点数目的最大值。（自带最大值属性）
         if len(nodes) == 0:
             self.rootNode = BTreeNode(degree)
             self.nodes = {}
@@ -54,12 +58,12 @@ class BTree:
 
     def build(self, keys, values):
         if len(keys) != len(values):
-            return
+            return  # 无效创建
         for ind in range(len(keys)):
-            self.insert(Item(keys[ind], values[ind]))
+            self.insert(Item(keys[ind], values[ind]))  # 插入item
 
     def search(self, an_item):
-        return self.rootNode.search(self, an_item)
+        return self.rootNode.search(self, an_item)  # 从根节点开始搜索
 
     def predict(self, key):
         search_result = self.search(Item(key, 0))
@@ -68,58 +72,69 @@ class BTree:
             return -1
         return a_node.items[search_result['nodeIndex']].v
 
-    def split_child(self, p_node, i, c_node):
+    def split_child(self, p_node, i, c_node):  # 将c_node分裂, 中间关键字放在p_node的位置i上,
+        # 右半部分作为新节点放在i孩子位置, 然后将右半部分关闭访问
         new_node = self.get_free_node()
-        new_node.isLeaf = c_node.isLeaf
-        new_node.numberOfKeys = self.degree - 1
+        new_node.isLeaf = c_node.isLeaf  # 新节点是不是叶子结点也从已经爆的旧当前孩子节点继承
+        new_node.numberOfKeys = self.degree - 1  # 关键字数4等于度数5减一
         for j in range(0, self.degree - 1):
-            new_node.items[j] = c_node.items[j + self.degree]
-        if c_node.isLeaf is False:
+            new_node.items[j] = c_node.items[j + self.degree]  # 新节点是子节点c_node右半部分
+        if c_node.isLeaf is False:  # 如果子节点不为空, 新节点还要继承子节点的孩子
             for j in range(0, self.degree):
                 new_node.children[j] = c_node.children[j + self.degree]
-        c_node.numberOfKeys = self.degree - 1
-        j = p_node.numberOfKeys + 1
-        while j > i + 1:
+        c_node.numberOfKeys = self.degree - 1  # 子节点c_node中间及右半部分关闭访问.
+        # 这里体现了管写不管改的思想, 因为是面向磁盘的数据结构, 效率优先, 一点空间不算什么, 但是删除它费时间
+        j = p_node.numberOfKeys + 1  # p_node下一个能写的位置索引
+        while j > i + 1:  # j索引从最后一个孩子索引到第i+1个孩子, 父节点的孩子右移. 腾出孩子位置给新节点
             p_node.children[j + 1] = p_node.children[j]
             j -= 1
+        # 此时j索引到的是下标为i+1的孩子位置, 接上新建的孩子节点
         p_node.children[j] = new_node.get_index()
-        j = p_node.numberOfKeys
-        while j > i:
+        j = p_node.numberOfKeys  # j是键数, i是新的关键字要插入的位置
+        while j > i:  # j索引从最后一个键索引到第i个键. 父节点的键右移.  # todo: 这里不应该是while j >= i吗,
+            # 原来第i位置的不转移吗, 直接被覆盖?
             p_node.items[j + 1] = p_node.items[j]
             j -= 1
-        p_node.items[i] = c_node.items[self.degree - 1]
-        p_node.numberOfKeys += 1
+        p_node.items[i] = c_node.items[self.degree - 1]  # c_node中间键送入上级中指定位置i
+        p_node.numberOfKeys += 1  # 并且父节点关键字计数加一
 
-    def insert(self, an_item):
+    def insert(self, an_item):  # 这个应该是执行在节点对应的子树尺度上的, 而不是整棵树上的
         search_result = self.search(an_item)
         if search_result['found']:
-            return None
-        r = self.rootNode
-        if r.numberOfKeys == 2 * self.degree - 1:
-            s = self.get_free_node()
+            return None  # 插入的是原有的值, 无效插入
+        r = self.rootNode  # rootNode是根节点
+        if r.numberOfKeys == 2 * self.degree - 1:  # 如果在根节点已经满了的情况下插入新的关键字,
+            # 要对根节点进行分裂. 从根节点往上开节点
+            s = self.get_free_node()  # 给self新加了一个节点, 扩充后的树句柄给s
             self.set_root_node(s)
             s.isLeaf = False
             s.numberOfKeys = 0
             s.children[0] = r.get_index()
-            self.split_child(s, 0, r)
+            self.split_child(s, 0, r)  # 将r作为子树放在s的位置0
             self.insert_not_full(s, an_item)
-        else:
+        else:  # 插入后的关键字个数小于m, 可直接插入
             self.insert_not_full(r, an_item)
 
-    def insert_not_full(self, inNode, anItem):
-        i = inNode.numberOfKeys - 1
-        if inNode.isLeaf:
-            while i >= 0 and anItem < inNode.items[i]:
+    def insert_not_full(self, inNode, anItem):  # insertNode, 表示在哪个节点插入
+        """inNode索引到的, 要插入在这里的节点"""
+        i = inNode.numberOfKeys - 1  # 最后一个关键字(item)的索引. 也即i指向了最大的那个key
+        if inNode.isLeaf:  # 新项是叶子节点好说, 直接把更大的项右移一位, 然后把新项放入对应位置
+            while i >= 0 and anItem < inNode.items[i]:  # 不大于等于0就不判定后面的大小关系了
                 inNode.items[i + 1] = inNode.items[i]
                 i -= 1
             inNode.items[i + 1] = anItem
             inNode.numberOfKeys += 1
-        else:
+        else:  # 不是根节点的话, 看他左子树满不满, 满了的话, 分裂, 如果新入的关键字比要插入的小, 继续往右找.
+            # 注意一定要插入到最底层的某个非叶节点, 因为只有到最底层才能比较完, 从而最终确定插入哪个位置
             while i >= 0 and anItem < inNode.items[i]:
                 i -= 1
-            i += 1
+            i += 1  # 这个时候anItem是大于等于inNode.items[i]的第一个索引
             if self.get_node(inNode.children[i]).numberOfKeys == 2 * self.degree - 1:
+                # 当前节点满了的话,当其父节点有要插入的值时, 将当前子节点分裂.
+                # 也就是说, 父节点没有值要插入时, 不用管当前节点是否满, 减少不必要的操作
                 self.split_child(inNode, i, self.get_node(inNode.children[i]))
+                # 将self.get_node(inNode.children[i])分裂, 中间关键字放在inNode的位置i上,
+                # 右半部分作为新节点放在i孩子位置, 然后将self.get_node(inNode.children[i])右半部分关闭访问
                 if anItem > inNode.items[i]:
                     i += 1
             self.insert_not_full(self.get_node(inNode.children[i]), anItem)
@@ -133,21 +148,22 @@ class BTree:
         self.delete_in_node(r, an_item, search_result)
 
     def delete_in_node(self, a_node, an_item, search_result):
+        """从a_node中删除元素an_item, 参考信息为search_result"""
         if a_node.index == search_result['fileIndex']:
-            i = search_result['nodeIndex']
+            i = search_result['nodeIndex']  # nodeIndex是在Node里面的索引
             if a_node.isLeaf:
-                while i < a_node.numberOfKeys - 1:
+                while i < a_node.numberOfKeys - 1:  # 如果要删除的元素位于叶子结点, 则索引之后的元素通通前移一位
                     a_node.items[i] = a_node.items[i + 1]
                     i += 1
-                a_node.numberOfKeys -= 1
-            else:
+                a_node.numberOfKeys -= 1  # 该节点关键字的数量减一
+            else:  # 要删除的元素不位于叶子结点
                 left = self.get_node(a_node.children[i])
                 right = self.get_node(a_node.children[i + 1])
-                if left.numberOfKeys >= self.degree:
+                if left.numberOfKeys >= self.degree:  # 这两种都是左右兄弟够借的情况. 由于面向对象的思想, 在另一个类函数中展开
                     a_node.items[i] = self.get_right_most(left)
                 elif right.numberOfKeys >= self.degree:
                     a_node.items[i] = self.get_right_most(right)
-                else:
+                else:  # 左右兄弟都不够借
                     k = left.numberOfKeys
                     left.items[left.numberOfKeys] = an_item
                     left.numberOfKeys += 1
@@ -163,12 +179,13 @@ class BTree:
                         del self.nodes[a_node.get_index()]
                         self.set_root_node(left)
                     self.delete_in_node(left, an_item, {'found': True, 'fileIndex': left.index, 'nodeIndex': k})
-        else:
+        else:  # 也即a_node.index != search_result['fileIndex']
             i = 0
+            # 如果当前节点没有, 则从孩子中一个一个找
             while i < a_node.numberOfKeys and self.get_node(a_node.children[i]).search(self, an_item)['found'] is False:
                 i += 1
-            c_node = self.get_node(a_node.children[i])
-            if c_node.numberOfKeys < self.degree:
+            c_node = self.get_node(a_node.children[i])  # 当前孩子节点i包含要删除的元素
+            if c_node.numberOfKeys < self.degree:  # 进行操作的前提条件, 不进入没有设置报错
                 j = i - 1
                 while j < i + 2 and self.get_node(a_node.children[j]).numberOfKeys < self.degree:
                     j += 1
@@ -236,7 +253,7 @@ class BTree:
         self.write_at(index, new_node)
         return new_node
 
-    def get_free_index(self):
+    def get_free_index(self):  # 使得self.free_index加一, 返回当前free_index
         self.freeIndex += 1
         return self.freeIndex - 1
 
@@ -281,15 +298,32 @@ class Item():
 
 # For Test
 def b_tree_main():
-    path = "last_data.csv"
+    # path = "last_data.csv"
+    path = "data\\exponential_s.csv"
+
     data = pd.read_csv(path)
     b = BTree(2)
     for i in range(data.shape[0]):
-        b.insert(Item(data.ix[i, 0], data.ix[i, 1]))
+        b.insert(Item(data.iloc[i, 0], data.iloc[i, 1]))
 
     pos = b.predict(30310)
     print(pos)
 
 
+def b_tree_main2():
+    # path = "last_data.csv"
+    path = "data\\normal_s.csv"
+
+    data = pd.read_csv(path)
+    b = BTree(2)  # 这里的degree指的是 math.ceil(M/2) - 1
+    i = 0
+    while (i in range(data.shape[0])) and (i <= 12):
+        b.insert(Item(data.iloc[i, 0], data.iloc[i, 1]))
+        i += 1
+
+    pos = b.predict(8)
+    print(pos)
+
+
 if __name__ == '__main__':
-    b_tree_main()
+    b_tree_main2()
