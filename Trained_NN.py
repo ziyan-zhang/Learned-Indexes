@@ -2,14 +2,7 @@
 import tensorflow as tf
 import numpy as np
 from enum import Enum
-from data.create_data import Distribution
 from functools import wraps
-
-DATA_TYPE = Distribution.RANDOM
-
-def set_data_type(data_type):
-    global DATA_TYPE
-    DATA_TYPE = data_type
 
 # using cache
 def memoize(func):
@@ -54,18 +47,7 @@ class ParameterPool(Enum):
 
 # initialize weight matrix, 模型各层权重的初始化方法, 这里为不同的数据(关键字)分布做了特殊化处理.
 def weight_variable(shape):
-    if DATA_TYPE == Distribution.RANDOM:
-        initial = tf.constant(0.1, shape=shape)
-    elif DATA_TYPE == Distribution.LOGNORMAL:
-        initial = tf.truncated_normal(shape=shape, stddev=0.1)
-        # initial = tf.constant(0.1, shape=shape)
-    elif DATA_TYPE == Distribution.EXPONENTIAL:
-        # initial = tf.truncated_normal(shape=shape, stddev=0.1)
-        initial = tf.constant(0.1, shape=shape)
-    elif DATA_TYPE == Distribution.NORMAL:
-        initial = tf.truncated_normal(shape=shape, mean=0.1, stddev=0.1)
-    else:
-        initial = tf.constant(0.1, shape=shape)
+    initial = tf.constant(0.1, shape=shape)
     return tf.Variable(initial)
 
 # initialize bias, 模型各层偏差的初始化方法, 唯一确定的, 与关键字的分布无关
@@ -86,6 +68,7 @@ class AbstractNN:
         tmp_res = np.mat(input_key) * np.mat(self.weights[0]) + np.mat(self.bias[0])
         for i in range(1, len(self.core_nums) - 1):
             tmp_res = np.mat(tmp_res) * np.mat(self.weights[i]) + np.mat(self.bias[i])
+            print("")
         return int(np.round(tmp_res[0][0]))  # 使用numpy的round可以直接对matrix进行操作应该是, 不用np.会报错
 
 

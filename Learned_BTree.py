@@ -2,9 +2,9 @@
 
 from __future__ import print_function
 import pandas as pd
-from Trained_NN import TrainedNN, AbstractNN, ParameterPool, set_data_type
+from Trained_NN import TrainedNN, AbstractNN, ParameterPool
 from btree import BTree
-from data.create_data import create_data, Distribution
+
 import time, gc, json
 import os, sys, getopt
 from tqdm import tqdm
@@ -25,47 +25,25 @@ class NpEncoder(json.JSONEncoder):
 # 版权声明：本文为CSDN博主「Zhou_yongzhe」的原创文章，遵循CC 4.0 BY-SA版权协议，转载请附上原文出处链接及本声明。
 # 原文链接：https://blog.csdn.net/Zhou_yongzhe/article/details/87692052
 
-# Setting 
-# BLOCK_SIZE = 100
-BLOCK_SIZE = 10000  # todo: 这里两个变量的意义
-# TOTAL_NUMBER = 300000
-TOTAL_NUMBER = 3000000
+# Setting
+TOTAL_NUMBER = 200
+BLOCK_SIZE = 10  # todo: 这里两个变量的意义
+
 # todo 这里的这两个值, 有必要跟vreat_data里面的一样吗
 # 一个性能差距几乎已经很小的结果↓
 # BLOCK_SIZE = 1000
 # TOTAL_NUMBER = 300000
 
 # data files
-filePath = {
-    Distribution.RANDOM: "data/random.csv",
-    Distribution.BINOMIAL: "data/binomial.csv",
-    Distribution.POISSON: "data/poisson.csv",
-    Distribution.EXPONENTIAL: "data/exponential.csv",
-    Distribution.NORMAL: "data/normal.csv",
-    Distribution.LOGNORMAL: "data/lognormal.csv"
-}
-
+filePath = "data\weblog_new.csv"
 # result record path
-pathString = {
-    Distribution.RANDOM: "Random",
-    Distribution.BINOMIAL: "Binomial",
-    Distribution.POISSON: "Poisson",
-    Distribution.EXPONENTIAL: "Exponential",
-    Distribution.NORMAL: "Normal",
-    Distribution.LOGNORMAL: "Lognormal"
-}
-
+pathString = "webLog_kaggle"
 # threshold for train (judge whether stop train and replace with BTree)
-thresholdPool = {
-    Distribution.RANDOM: [1, 4],    
-    Distribution.EXPONENTIAL: [55, 10000]
-}   
+
+thresholdPool = [1, 4]
 
 # whether use threshold to stop train for models in stages
-useThresholdPool = {
-    Distribution.RANDOM: [True, False],    
-    Distribution.EXPONENTIAL: [True, False],    
-}
+useThresholdPool = [True, False]  # todo 一般: 这两个布尔值是干嘛的?
 
 # hybrid training structure, 2 stages
 def hybrid_training(threshold, use_threshold, stage_nums, core_nums, train_step_nums, batch_size_nums, learning_rate_nums,
@@ -100,7 +78,7 @@ def hybrid_training(threshold, use_threshold, stage_nums, core_nums, train_step_
     tmp_inputs[0][0] = train_data_x
     tmp_labels[0][0] = train_data_y
     test_inputs = test_data_x  # todo 简单: 好像没有测试test集合?
-    for i in range(0, stage_length):  # 两个阶级
+    for i in range(0, stage_length):  # 两个阶级. self.core_nums两个列表, 为两个阶级分别指定全连接节点数量
         for j in tqdm(range(0, stage_nums[i])):  # 两个阶级各1, 10组数据.
             if len(tmp_labels[i][j]) == 0:
                 continue  # todo: 简单: 没有分到数据是什么情况?
@@ -154,27 +132,18 @@ def hybrid_training(threshold, use_threshold, stage_nums, core_nums, train_step_
     return index
 
 # main function for training idnex
-def train_index(threshold, use_threshold, distribution, path):
+def train_index(threshold, use_threshold, path):
     # data = pd.read_csv("data/random_t.csv", header=None)
     # data = pd.read_csv("data/exponential_t.csv", header=None)
-    data = pd.read_csv(path, header=None)
+    data = pd.read_csv(path, header=0)
     train_set_x = []
     train_set_y = []
     test_set_x = []
     test_set_y = []
 
-    set_data_type(distribution)
     # read parameter
-    if distribution == Distribution.RANDOM:
-        parameter = ParameterPool.RANDOM.value
-    elif distribution == Distribution.LOGNORMAL:
-        parameter = ParameterPool.LOGNORMAL.value
-    elif distribution == Distribution.EXPONENTIAL:
-        parameter = ParameterPool.EXPONENTIAL.value
-    elif distribution == Distribution.NORMAL:
-        parameter = ParameterPool.NORMAL.value
-    else:
-        return
+    parameter = ParameterPool.RANDOM.value  # todo 这里参数用了RAMDOM的, 不一定合适
+
     stage_set = parameter.stage_set
     # set number of models for second stage (1 model deal with 10000 records)
     # todo: 在调试: 下面这句话是个自适应的操作, 我们把他隐掉, 使用自带的10个模型
@@ -190,10 +159,8 @@ def train_index(threshold, use_threshold, distribution, path):
     global TOTAL_NUMBER  # 现在还是1500
     TOTAL_NUMBER = data.shape[0]  # 现在变成了1000, 被覆盖了
     for i in range(data.shape[0]):
-        # train_set_x.append(data.ix[i, 0])
-        # train_set_y.append(data.ix[i, 1])
-        train_set_x.append(data.iloc[i, 0])
-        train_set_y.append(data.iloc[i, 1])
+        train_set_x.append(data.iloc[i, 1])
+        train_set_y.append(data.iloc[i, 4])  # test_y即是位置, 也即
 
     # 在这个模式下, 如果要使用测试集, 也是使用全部的训练集作为测试集
     test_set_x = train_set_x[:]
@@ -201,8 +168,6 @@ def train_index(threshold, use_threshold, distribution, path):
     # data = pd.read_csv("data/random_t.csv", header=None)
     # data = pd.read_csv("data/exponential_t.csv", header=None)
     # for i in range(data.shape[0]):
-    #     test_set_x.append(data.ix[i, 0])
-    #     test_set_y.append(data.ix[i, 1])
     #     test_set_x.append(data.iloc[i, 0])
     #     test_set_y.append(data.iloc[i, 1])
 
@@ -260,16 +225,16 @@ def train_index(threshold, use_threshold, distribution, path):
     # 最后的模型
     result = [{"stage": 1, "parameters": result_stage1}, {"stage": 2, "parameters": result_stage2}]
 
-    # with open("model/" + pathString[distribution] + "/full_train/NN/" + str(TOTAL_NUMBER) + ".json", "wb") as jsonFile:
-    with open("model/" + pathString[distribution] + "/full_train/NN/" + str(TOTAL_NUMBER) + ".json",
+    # with open("model/" + pathString + "/full_train/NN/" + str(TOTAL_NUMBER) + ".json", "wb") as jsonFile:
+    with open("model/" + pathString + "/full_train/NN/" + str(TOTAL_NUMBER) + ".json",
                   "w") as jsonFile:
         json.dump(result, jsonFile, cls=NpEncoder)
 
     # wirte performance into files
     performance_NN = {"type": "NN", "build time": learn_time, "search time": search_time, "average error": mean_error,
                       "store size": os.path.getsize(
-                          "model/" + pathString[distribution] + "/full_train/NN/" + str(TOTAL_NUMBER) + ".json")}
-    with open("performance/" + pathString[distribution] + "/full_train/NN/" + str(TOTAL_NUMBER) + ".json",
+                          "model/" + pathString + "/full_train/NN/" + str(TOTAL_NUMBER) + ".json")}
+    with open("performance/" + pathString + "/full_train/NN/" + str(TOTAL_NUMBER) + ".json",
               "w") as jsonFile:
         json.dump(performance_NN, jsonFile, cls=NpEncoder)
 
@@ -318,7 +283,7 @@ def train_index(threshold, use_threshold, distribution, path):
                "numberOfkeys": node.numberOfKeys}
         result.append(tmp)
 
-    with open("model/" + pathString[distribution] + "/full_train/BTree/" + str(TOTAL_NUMBER) + ".json",
+    with open("model/" + pathString + "/full_train/BTree/" + str(TOTAL_NUMBER) + ".json",
               "w") as jsonFile:
         json.dump(result, jsonFile, cls=NpEncoder)
 
@@ -326,8 +291,8 @@ def train_index(threshold, use_threshold, distribution, path):
     performance_BTree = {"type": "BTree", "build time": build_time, "search time": search_time,
                          "average error": mean_error,
                          "store size": os.path.getsize(
-                             "model/" + pathString[distribution] + "/full_train/BTree/" + str(TOTAL_NUMBER) + ".json")}
-    with open("performance/" + pathString[distribution] + "/full_train/BTree/" + str(TOTAL_NUMBER) + ".json",
+                             "model/" + pathString + "/full_train/BTree/" + str(TOTAL_NUMBER) + ".json")}
+    with open("performance/" + pathString + "/full_train/BTree/" + str(TOTAL_NUMBER) + ".json",
               "w") as jsonFile:
         json.dump(performance_BTree, jsonFile, cls=NpEncoder)
 
@@ -336,25 +301,16 @@ def train_index(threshold, use_threshold, distribution, path):
 
 
 # Main function for sampel training
-def sample_train(threshold, use_threshold, distribution, training_percent, path):
+def sample_train(threshold, use_threshold, training_percent, path):
     data = pd.read_csv(path, header=None)
     train_set_x = []
     train_set_y = []
     test_set_x = []
     test_set_y = []
 
-    set_data_type(distribution)
     #read parameters
-    if distribution == Distribution.RANDOM:
-        parameter = ParameterPool.RANDOM.value
-    elif distribution == Distribution.LOGNORMAL:
-        parameter = ParameterPool.LOGNORMAL.value
-    elif distribution == Distribution.EXPONENTIAL:
-        parameter = ParameterPool.EXPONENTIAL.value
-    elif distribution == Distribution.NORMAL:
-        parameter = ParameterPool.NORMAL.value
-    else:
-        return
+    parameter = ParameterPool.RANDOM.value  # todo: 这里parameter用了RANDOM的, 不一定合适
+
     stage_set = parameter.stage_set
     stage_set[1] = int(data.shape[0] * training_percent / 10000)
     core_set = parameter.core_set
@@ -427,14 +383,14 @@ def sample_train(threshold, use_threshold, distribution, training_percent, path)
                                   "bias": trained_index[1][ind].bias}
     result = [{"stage": 1, "parameters": result_stage1}, {"stage": 2, "parameters": result_stage2}]
 
-    with open("model/" + pathString[distribution] + "/sample_train/NN/" + str(training_percent) + ".json",
+    with open("model/" + pathString + "/sample_train/NN/" + str(training_percent) + ".json",
               "w") as jsonFile:
         json.dump(result, jsonFile, cls=NpEncoder)
 
     performance_NN = {"type": "NN", "build time": learn_time, "search time": search_time, "average error": mean_error,
                       "store size": os.path.getsize(
-                          "model/" + pathString[distribution] + "/sample_train/NN/" + str(training_percent) + ".json")}
-    with open("performance/" + pathString[distribution] + "/sample_train/NN/" + str(training_percent) + ".json",
+                          "model/" + pathString + "/sample_train/NN/" + str(training_percent) + ".json")}
+    with open("performance/" + pathString + "/sample_train/NN/" + str(training_percent) + ".json",
               "w") as jsonFile:
         json.dump(performance_NN, jsonFile, cls=NpEncoder)
 
@@ -474,7 +430,6 @@ def main(argv):
     is_sample = False
     is_type = False
     is_distribution = False
-    do_create = True
     try:
         opts, args = getopt.getopt(argv, "hd:t:p:n:c:")
     except getopt.GetoptError:
@@ -500,15 +455,9 @@ def main(argv):
             if not is_type:
                 show_help_message('noTypeError')
                 return
-            if arg == "random":
-                distribution = Distribution.RANDOM
-                is_distribution = True
-            elif arg == "exponential":
-                distribution = Distribution.EXPONENTIAL
-                is_distribution = True
-            else:
-                show_help_message('distribution')
-                return
+            # 这里的arg也是默认用了RANDOM的
+            is_distribution = True
+
         elif opt == '-p':
             if not is_type:
                 show_help_message('noTypeError')
@@ -536,12 +485,6 @@ def main(argv):
                 show_help_message('number')
                 return
 
-        elif opt == '-c':
-            if not is_distribution:
-                show_help_message('noDistributionError')
-                return
-            do_create = not (int(arg) == 0)
-
         else:
             print("Unknown parameters, please use -h for instructions.")
             return
@@ -552,15 +495,13 @@ def main(argv):
     if not is_distribution:
         show_help_message('noDistributionError')
         return
-    if do_create:
-        create_data(distribution, num)
     if is_sample:        
-        sample_train(thresholdPool[distribution], useThresholdPool[distribution], distribution, per, filePath[distribution])
+        sample_train(thresholdPool, useThresholdPool, per, filePath)
     else:
-        train_index(thresholdPool[distribution], useThresholdPool[distribution], distribution, filePath[distribution])
+        train_index(thresholdPool, useThresholdPool, filePath)
 
 
 if __name__ == "__main__":
     # 原作者的代码是命令行方式, 不方便调试, 其实也就是一个列表而已
-    my_argv = ['-t', 'full', '-d', 'random', '-n', '100000', '-c', '1']
+    my_argv = ['-t', 'full', '-d', 'random', '-n', '100000']
     main(my_argv)
