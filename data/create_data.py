@@ -5,7 +5,7 @@ import csv
 import random
 
 # SIZE = 100000
-SIZE = 10000
+SIZE = 3000000
 BLOCK_SIZE = 1000
 
 

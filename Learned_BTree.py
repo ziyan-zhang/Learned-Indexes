@@ -9,7 +9,7 @@ import time, gc, json
 import os, sys, getopt
 from tqdm import tqdm
 import numpy as np
-
+# todo: 这里由于numpy版本, 会打印出来一些warning, 不会影响性能吧最后, 最后弄成numpy=1.16.0也行..
 # 为后面186行的保存做准备
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
@@ -27,8 +27,13 @@ class NpEncoder(json.JSONEncoder):
 
 # Setting 
 # BLOCK_SIZE = 100
-BLOCK_SIZE = 1000
-TOTAL_NUMBER = 300000
+BLOCK_SIZE = 10000  # todo: 这里两个变量的意义
+# TOTAL_NUMBER = 300000
+TOTAL_NUMBER = 3000000
+# todo 这里的这两个值, 有必要跟vreat_data里面的一样吗
+# 一个差距几乎已经很小的结果↓
+# BLOCK_SIZE = 1000
+# TOTAL_NUMBER = 300000
 
 # data files
 filePath = {
@@ -38,7 +43,6 @@ filePath = {
     Distribution.EXPONENTIAL: "data/exponential.csv",
     Distribution.NORMAL: "data/normal.csv",
     Distribution.LOGNORMAL: "data/lognormal.csv"
-
 }
 
 # result record path
@@ -66,33 +70,58 @@ useThresholdPool = {
 # hybrid training structure, 2 stages
 def hybrid_training(threshold, use_threshold, stage_nums, core_nums, train_step_nums, batch_size_nums, learning_rate_nums,
                     keep_ratio_nums, train_data_x, train_data_y, test_data_x, test_data_y):
-    stage_length = len(stage_nums)
-    col_num = stage_nums[1]
+    """
+    Args:
+        threshold:  从NN替换为BTree的误差限度 todo:可能不太准确
+        use_threshold:  是否使用该种替换
+        stage_nums:  模型有几个阶级
+        core_nums: 核数目, 应该是值得每个阶级有多少个核吧
+        train_step_nums: todo:不知道
+        batch_size_nums: 应该是在各个阶级训练的时候, 模型的batch_size
+        learning_rate_nums: 应该是在各个阶级训练的时候, 模型的学习率
+        keep_ratio_nums: todo 不知道
+        train_data_x: 用预训练的键
+        train_data_y: 用预训练的值
+        test_data_x: 用于测试的键
+        test_data_y: 用于测试的值
+    Returns:
+        训练好的模型index
+    """
+    stage_length = len(stage_nums)  # 阶级数, todo 这里只用了两个阶级, 需要扩展
+    col_num = stage_nums[1]  # 第二阶级(初始一阶的话)的模型数量
     # initial
+    # tmp_inputs和tmp_labels是三级列表, 每个单位是一个空列表. index是一个二级列表, 每个单位是一个None.
     tmp_inputs = [[[] for i in range(col_num)] for i in range(stage_length)]
     tmp_labels = [[[] for i in range(col_num)] for i in range(stage_length)]
     index = [[None for i in range(col_num)] for i in range(stage_length)]
+    # todo: 微小问题, 这里为第一个个阶级的模型开辟的空间有点大, 一个就行了, 开辟了10个
 
+    # 给训练数据和标签赋值
     tmp_inputs[0][0] = train_data_x
     tmp_labels[0][0] = train_data_y
-    test_inputs = test_data_x
-    for i in range(0, stage_length):
-        for j in tqdm(range(0, stage_nums[i])):
+    test_inputs = test_data_x  # todo 简单: 好像没有测试test集合?
+    for i in range(0, stage_length):  # 两个阶级
+        for j in tqdm(range(0, stage_nums[i])):  # 两个阶级各1, 10组数据.
             if len(tmp_labels[i][j]) == 0:
-                continue
+                continue  # todo: 简单: 没有分到数据是什么情况?
             inputs = tmp_inputs[i][j]
             labels = []
             test_labels = []
             if i == 0:
                 # first stage, calculate how many models in next stage
                 divisor = stage_nums[i + 1] * 1.0 / (TOTAL_NUMBER / BLOCK_SIZE)
+                # 数据集的总量除以block的大小, 结果是数据集实际装满了多少个block (TOTAL_NUMBER / BLOCK_SIZE)
+                # 模型数除以block数, 结果是一个有效block对应divisor个下层模型.
+                # 如果下层模型多, 比如是有效block的三倍数量. 则divisor=3, 也即一个block对应三个模型.
+                # 第一层的key本来是根据BLOCK_SIZE确定的, todo 至少应该是这样, 确认下
                 for k in tmp_labels[i][j]:
+                    # 对key进行缩放.
                     labels.append(int(k * divisor))
                 for k in test_data_y:
                     test_labels.append(int(k * divisor))
-            else:
+            else:  # 这里设定的是第一层的标签需要缩放, 后面不需要. todo 应该不适配后面几层模型数量不一样多的情况
                 labels = tmp_labels[i][j]
-                test_labels = test_data_y    
+                test_labels = test_data_y
             # train model                    
             tmp_index = TrainedNN(threshold[i], use_threshold[i], core_nums[i], train_step_nums[i], batch_size_nums[i],
                                     learning_rate_nums[i],
@@ -102,18 +131,19 @@ def hybrid_training(threshold, use_threshold, stage_nums, core_nums, train_step_
             index[i][j] = AbstractNN(tmp_index.get_weights(), tmp_index.get_bias(), core_nums[i], tmp_index.cal_err())
             del tmp_index
             gc.collect()
-            if i < stage_length - 1:
+            if i < stage_length - 1:  # 非最后一个阶级
                 # allocate data into training set for models in next stage
-                for ind in range(len(tmp_inputs[i][j])):
-                    # pick model in next stage with output of this model
-                    p = index[i][j].predict(tmp_inputs[i][j][ind])                    
-                    if p > stage_nums[i + 1] - 1:
+                for ind in range(len(tmp_inputs[i][j])):  # 第i个阶级, 第j个模块, 遍历每一个输入的key
+                    # 根据本阶级模块输出, 选择下一个阶级所用的模块
+                    p = index[i][j].predict(tmp_inputs[i][j][ind])  # 这里的p, 前文的label已经缩放过, 因此不用再缩放 todo 关键还是BLOCK_SIZE TOTAL_SIZE这两个变量的意义弄明白
+                    if p > stage_nums[i + 1] - 1:  # 超范围的预测处理方式是使他在范围顶端
                         p = stage_nums[i + 1] - 1
                     tmp_inputs[i + 1][p].append(tmp_inputs[i][j][ind])
                     tmp_labels[i + 1][p].append(tmp_labels[i][j][ind])
 
+    # 现在处理最后一个模块的事情, 也即用BTree代替部分模块.
     for i in range(stage_nums[stage_length - 1]):
-        if index[stage_length - 1][i] is None:
+        if index[stage_length - 1][i] is None:  # 模型不存在则跳过, 这种条件编程一定要注意, 否则报错, 甚至莫名其妙的错误
             continue
         mean_abs_err = index[stage_length - 1][i].mean_err
         if mean_abs_err > threshold[stage_length - 1]:
@@ -156,21 +186,25 @@ def train_index(threshold, use_threshold, distribution, path):
     learning_rate_set = parameter.learning_rate_set
     keep_ratio_set = parameter.keep_ratio_set
 
-    global TOTAL_NUMBER
-    TOTAL_NUMBER = data.shape[0]
+    # 现在是full train模式, 全部的数据都用作训练
+    global TOTAL_NUMBER  # 现在还是1500
+    TOTAL_NUMBER = data.shape[0]  # 现在变成了1000, 被覆盖了
     for i in range(data.shape[0]):
         # train_set_x.append(data.ix[i, 0])
         # train_set_y.append(data.ix[i, 1])
         train_set_x.append(data.iloc[i, 0])
         train_set_y.append(data.iloc[i, 1])
 
+    # 在这个模式下, 如果要使用测试集, 也是使用全部的训练集作为测试集
     test_set_x = train_set_x[:]
-    test_set_y = train_set_y[:]     
+    test_set_y = train_set_y[:]
     # data = pd.read_csv("data/random_t.csv", header=None)
     # data = pd.read_csv("data/exponential_t.csv", header=None)
     # for i in range(data.shape[0]):
     #     test_set_x.append(data.ix[i, 0])
     #     test_set_y.append(data.ix[i, 1])
+    #     test_set_x.append(data.iloc[i, 0])
+    #     test_set_y.append(data.iloc[i, 1])
 
     print("*************start Learned NN************")
     print("Start Train")
@@ -178,10 +212,27 @@ def train_index(threshold, use_threshold, distribution, path):
     # train index
     trained_index = hybrid_training(threshold, use_threshold, stage_set, core_set, train_step_set, batch_size_set, learning_rate_set,
                                     keep_ratio_set, train_set_x, train_set_y, [], [])
+    """
+    Args:
+        threshold:  从NN替换为BTree的误差限度 todo:可能不太准确
+        use_threshold:  是否使用该种替换
+        stage_nums:  模型有几个阶级
+        core_nums: 核数目, 应该是值得每个阶级有多少个核吧
+        train_step_nums: todo:不知道
+        batch_size_nums: 应该是在各个阶级训练的时候, 模型的batch_size
+        learning_rate_nums: 应该是在各个阶级训练的时候, 模型的学习率
+        keep_ratio_nums: todo 不知道
+        train_data_x: 用预训练的键
+        train_data_y: 用预训练的值
+        test_data_x: 用于测试的键
+        test_data_y: 用于测试的值
+    Returns:
+        训练好的模型index
+    """
     end_time = time.time()
     learn_time = end_time - start_time
-    print("Build Learned NN time ", learn_time)
-    print("Calculate Error")
+    print("训练神经网络所用时间", learn_time)
+    # print("Calculate Error")
     err = 0
     start_time = time.time()
     # calculate error
@@ -202,10 +253,10 @@ def train_index(threshold, use_threshold, distribution, path):
     # write parameter into files
     result_stage1 = {0: {"weights": trained_index[0][0].weights, "bias": trained_index[0][0].bias}}
     result_stage2 = {}
-    for ind in range(len(trained_index[1])):
-        if trained_index[1][ind] is None:
+    for ind in range(len(trained_index[1])):  # 不过这里已经是第二个模型了
+        if trained_index[1][ind] is None:  # 如果模型空, 直接离开. 比如第一个阶级的模型只有一个, 而不是train_index模型形状这样的10个.
             continue
-        if isinstance(trained_index[1][ind], BTree):
+        if isinstance(trained_index[1][ind], BTree):  # 保存最后的模型, 是B树保存B树模型, 否则保存NN模型
             tmp_result = []
             for ind, node in trained_index[1][ind].nodes.items():
                 item = {}
@@ -220,12 +271,13 @@ def train_index(threshold, use_threshold, distribution, path):
         else:
             result_stage2[ind] = {"weights": trained_index[1][ind].weights,
                                   "bias": trained_index[1][ind].weights}
+    # 最后的模型
     result = [{"stage": 1, "parameters": result_stage1}, {"stage": 2, "parameters": result_stage2}]
 
     # with open("model/" + pathString[distribution] + "/full_train/NN/" + str(TOTAL_NUMBER) + ".json", "wb") as jsonFile:
     with open("model/" + pathString[distribution] + "/full_train/NN/" + str(TOTAL_NUMBER) + ".json",
                   "w") as jsonFile:
-        json.dump(result, jsonFile)
+        json.dump(result, jsonFile, cls=NpEncoder)
 
     # wirte performance into files
     performance_NN = {"type": "NN", "build time": learn_time, "search time": search_time, "average error": mean_error,
@@ -233,7 +285,7 @@ def train_index(threshold, use_threshold, distribution, path):
                           "model/" + pathString[distribution] + "/full_train/NN/" + str(TOTAL_NUMBER) + ".json")}
     with open("performance/" + pathString[distribution] + "/full_train/NN/" + str(TOTAL_NUMBER) + ".json",
               "w") as jsonFile:
-        json.dump(performance_NN, jsonFile)
+        json.dump(performance_NN, jsonFile, cls=NpEncoder)
 
     del trained_index
     gc.collect()
@@ -253,7 +305,7 @@ def train_index(threshold, use_threshold, distribution, path):
     for ind in range(len(test_set_x)):
         pre = bt.predict(test_set_x[ind])
         err += abs(pre - test_set_y[ind])
-        if err != 0:
+        if err != 0:  # 预测不对的话, 往左右两边查找. todo 重要: BTree还能预测不对吗?
             flag = 1
             pos = pre
             off = 1
@@ -291,7 +343,7 @@ def train_index(threshold, use_threshold, distribution, path):
                              "model/" + pathString[distribution] + "/full_train/BTree/" + str(TOTAL_NUMBER) + ".json")}
     with open("performance/" + pathString[distribution] + "/full_train/BTree/" + str(TOTAL_NUMBER) + ".json",
               "w") as jsonFile:
-        json.dump(performance_BTree, jsonFile)
+        json.dump(performance_BTree, jsonFile, cls=NpEncoder)
 
     del bt
     gc.collect()
@@ -391,14 +443,14 @@ def sample_train(threshold, use_threshold, distribution, training_percent, path)
 
     with open("model/" + pathString[distribution] + "/sample_train/NN/" + str(training_percent) + ".json",
               "w") as jsonFile:
-        json.dump(result, jsonFile)
+        json.dump(result, jsonFile, cls=NpEncoder)
 
     performance_NN = {"type": "NN", "build time": learn_time, "search time": search_time, "average error": mean_error,
                       "store size": os.path.getsize(
                           "model/" + pathString[distribution] + "/sample_train/NN/" + str(training_percent) + ".json")}
     with open("performance/" + pathString[distribution] + "/sample_train/NN/" + str(training_percent) + ".json",
               "w") as jsonFile:
-        json.dump(performance_NN, jsonFile)
+        json.dump(performance_NN, jsonFile, cls=NpEncoder)
 
     del trained_index
     gc.collect()

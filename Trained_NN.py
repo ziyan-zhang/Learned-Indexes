@@ -15,7 +15,7 @@ def set_data_type(data_type):
 def memoize(func):
     memo = {}
 
-    @wraps(func)
+    @wraps(func)  # @wraps(func)作用: 不改变使用装饰器原有函数的结构(如name, doc)
     def wrapper(*args):
         if args in memo:
             return memo[args]
@@ -52,7 +52,7 @@ class ParameterPool(Enum):
     NORMAL = Parameter(stages=[1, 100], cores=[[1, 8, 1], [1, 8, 1]], train_steps=[20000, 300],
                        batch_sizes=[50, 50], learning_rates=[0.0001, 0.001], keep_ratios=[0.9, 1.0])
 
-# initialize weight marrix
+# initialize weight matrix, 模型各层权重的初始化方法, 这里为不同的数据(关键字)分布做了特殊化处理.
 def weight_variable(shape):
     if DATA_TYPE == Distribution.RANDOM:
         initial = tf.constant(0.1, shape=shape)
@@ -68,7 +68,7 @@ def weight_variable(shape):
         initial = tf.constant(0.1, shape=shape)
     return tf.Variable(initial)
 
-# initialize 
+# initialize bias, 模型各层偏差的初始化方法, 唯一确定的, 与关键字的分布无关
 def bias_variable(shape):
     initial = tf.constant(0.1, shape=shape)
     return tf.Variable(initial)
@@ -81,13 +81,12 @@ class AbstractNN:
         self.core_nums = core_nums
         self.mean_err = mean_err
 
-    @memoize
+    @memoize  # todo 意思是把input_key, 预测的输出放在了一个字典中? 从而实现放入内存?
     def predict(self, input_key):
         tmp_res = np.mat(input_key) * np.mat(self.weights[0]) + np.mat(self.bias[0])
         for i in range(1, len(self.core_nums) - 1):
             tmp_res = np.mat(tmp_res) * np.mat(self.weights[i]) + np.mat(self.bias[i])
-        # return int(round(tmp_res[0][0]))
-        return int(np.round(tmp_res[0][0]))  # 使用numpy的东西可以直接对matrix进行操作应该是
+        return int(np.round(tmp_res[0][0]))  # 使用numpy的round可以直接对matrix进行操作应该是, 不用np.会报错
 
 
 # Netural Network Model
@@ -147,32 +146,32 @@ class TrainedNN:
         last_err = 0
         err_count = 0
         for step in range(0, self.train_step_nums):
-            self.sess.run(self.train_step,
+            self.sess.run(self.train_step,  # self.train_step里面包含了优化器和优化的指标. 每个Session().run都要用
                           feed_dict={self.h_fc_drop[0]: self.batch_x, self.y_: self.batch_y,
                                      self.keep_prob: self.keep_ratio})            
             # check every 100 steps
             if step % 100 == 0:
                 err = self.sess.run(self.cross_entropy, feed_dict={self.h_fc_drop[0]: np.array([self.train_x]).T,
                                                                    self.y_: np.array([self.train_y]).T,
-                                                                   self.keep_prob: 1.0})
+                                                                   self.keep_prob: 1.0})  # 测试的时候不用dropout操作
                 # print("cross_entropy: %f" % err)  # 把这句话注释掉
                 if step == 0:
                     last_err = err 
-                # use threhold to stop train 
+                # 设定了threshold, 就在err小于threshold时开始训练
                 if self.useThreshold:
                     if err < self.threshold_nums:
                         return
-                # not use threshold, stop when error stop decreasing
+                # 没设定threshold, 就在err连续10个epoch增加(不减小)时停止训练
                 elif err > last_err:
                     err_count += 1
                     if err_count == 10:
                         return
                 last_err = err
 
-            self.next_batch()    
+            self.next_batch()  # 换成下一轮的batch_x, batch_y, 并且使batch标号+1或归0
 
     # calculate mean error
-    def cal_err(self):
+    def cal_err(self):  # 与train中每100个epoch执行一次的计算误差操作是一样的, 只不过执行时机不同
         mean_err = self.sess.run(self.cross_entropy, feed_dict={self.h_fc_drop[0]: np.array([self.train_x]).T,
                                                                 self.y_: np.array([self.train_y]).T,
                                                                 self.keep_prob: 1.0})
@@ -186,7 +185,8 @@ class TrainedNN:
     # get weight matrix
     def get_weights(self):
         weights = []
-        for i in range(len(self.core_nums) - 1):
+        for i in range(len(self.core_nums) - 1):  # self.core_nums表示网络的层数, 比如一个隐藏层, self.core_nums=3, 权重矩阵数就是2.
+            # 这里不用run吧, 而且后面的feed_dict参数的意义估计也不大
             weights.append(self.sess.run(self.w_fc[i], feed_dict={self.h_fc_drop[0]: np.array([self.train_x]).T,
                                                                        self.y_: np.array([self.train_y]).T,
                                                                        self.keep_prob: 1.0}).tolist())
