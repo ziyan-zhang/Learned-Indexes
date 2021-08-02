@@ -159,7 +159,8 @@ class TrainedNN:
                     last_err = err 
                 # 设定了threshold, 就在err小于threshold时开始训练
                 if self.useThreshold:
-                    if err < self.threshold_nums:
+                    if err < self.threshold_nums:  # todo 极其重要! thershold小于1就停止训练是不是有点为时过早啊,
+                        # 虽然预测的是block的编号, 同一个block基本就稳了, 但是对于未见过的测试集呢? 岂不是误差越小越容易预测对?
                         return
                 # 没设定threshold, 就在err连续10个epoch增加(不减小)时停止训练
                 elif err > last_err:

@@ -5,8 +5,8 @@ import csv
 import random
 
 # SIZE = 100000
-SIZE = 3000000
-BLOCK_SIZE = 1000
+SIZE = 3000
+BLOCK_SIZE = 100
 
 
 class Distribution(Enum):

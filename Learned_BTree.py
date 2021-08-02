@@ -31,7 +31,7 @@ BLOCK_SIZE = 10000  # todo: 这里两个变量的意义
 # TOTAL_NUMBER = 300000
 TOTAL_NUMBER = 3000000
 # todo 这里的这两个值, 有必要跟vreat_data里面的一样吗
-# 一个差距几乎已经很小的结果↓
+# 一个性能差距几乎已经很小的结果↓
 # BLOCK_SIZE = 1000
 # TOTAL_NUMBER = 300000
 
@@ -212,27 +212,10 @@ def train_index(threshold, use_threshold, distribution, path):
     # train index
     trained_index = hybrid_training(threshold, use_threshold, stage_set, core_set, train_step_set, batch_size_set, learning_rate_set,
                                     keep_ratio_set, train_set_x, train_set_y, [], [])
-    """
-    Args:
-        threshold:  从NN替换为BTree的误差限度 todo:可能不太准确
-        use_threshold:  是否使用该种替换
-        stage_nums:  模型有几个阶级
-        core_nums: 核数目, 应该是值得每个阶级有多少个核吧
-        train_step_nums: todo:不知道
-        batch_size_nums: 应该是在各个阶级训练的时候, 模型的batch_size
-        learning_rate_nums: 应该是在各个阶级训练的时候, 模型的学习率
-        keep_ratio_nums: todo 不知道
-        train_data_x: 用预训练的键
-        train_data_y: 用预训练的值
-        test_data_x: 用于测试的键
-        test_data_y: 用于测试的值
-    Returns:
-        训练好的模型index
-    """
     end_time = time.time()
     learn_time = end_time - start_time
     print("训练神经网络所用时间", learn_time)
-    # print("Calculate Error")
+    print("训练结束, 开始进行测试. 当前试验阶段, 测试集是训练集本身.")
     err = 0
     start_time = time.time()
     # calculate error
@@ -244,6 +227,9 @@ def train_index(threshold, use_threshold, distribution, path):
         # predict position
         pre2 = trained_index[1][pre1].predict(test_set_x[ind])
         err += abs(pre2 - test_set_y[ind])
+        # 专为调试
+        if ind == 1500:
+            print("")
     end_time = time.time()
     search_time = (end_time - start_time) / len(test_set_x)
     print("Search time %f " % search_time)
