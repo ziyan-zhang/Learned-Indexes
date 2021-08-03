@@ -27,9 +27,9 @@ class NpEncoder(json.JSONEncoder):
 
 # Setting 
 # BLOCK_SIZE = 100
-BLOCK_SIZE = 10000  # todo: 这里两个变量的意义
+BLOCK_SIZE = 1000  # todo: 这里两个变量的意义
 # TOTAL_NUMBER = 300000
-TOTAL_NUMBER = 3000000
+TOTAL_NUMBER = 300000
 # todo 这里的这两个值, 有必要跟vreat_data里面的一样吗
 # 一个性能差距几乎已经很小的结果↓
 # BLOCK_SIZE = 1000
@@ -102,18 +102,20 @@ def hybrid_training(threshold, use_threshold, stage_nums, core_nums, train_step_
     test_inputs = test_data_x  # todo 简单: 好像没有测试test集合?
     for i in range(0, stage_length):  # 两个阶级
         for j in tqdm(range(0, stage_nums[i])):  # 两个阶级各1, 10组数据.
+            print('A: 训练模型: 第%d个阶级, 第%d个模块; 数据长度: %d' % (i, j, len(tmp_labels[i][j])))
             if len(tmp_labels[i][j]) == 0:
                 continue  # todo: 简单: 没有分到数据是什么情况?
             inputs = tmp_inputs[i][j]
             labels = []
             test_labels = []
             if i == 0:
-                # first stage, calculate how many models in next stage
-                divisor = stage_nums[i + 1] * 1.0 / (TOTAL_NUMBER / BLOCK_SIZE)
-                # 数据集的总量除以block的大小, 结果是数据集实际装满了多少个block (TOTAL_NUMBER / BLOCK_SIZE)
-                # 模型数除以block数, 结果是一个有效block对应divisor个下层模型.
+                print('第一个stage, 其预测性能决定了第二阶级各个模块对训练数据的分配, 至关重要')
+                BLOCK_NUMS = TOTAL_NUMBER / BLOCK_SIZE
+                divisor = stage_nums[i + 1] * 1.0 / BLOCK_NUMS
+                print("总数据量: %d, 每个BLOCK数据量: %d, 数据集能装出的BLOCK数量: %d" % (TOTAL_NUMBER, BLOCK_SIZE, BLOCK_NUMS))
+                print("第二阶段的模型数: %d, 每个模型负责的BLOCK数: %d" %(stage_nums[i+1], divisor))
                 # 如果下层模型多, 比如是有效block的三倍数量. 则divisor=3, 也即一个block对应三个模型.
-                # 第一层的key本来是根据BLOCK_SIZE确定的, todo 至少应该是这样, 确认下
+                # 第一层的key本来是根据BLOCK_SIZE确定的, todo 用模型序号确定会不会更好? 用BLOCK_SIZE确定可以共享权重吗
                 for k in tmp_labels[i][j]:
                     # 对key进行缩放.
                     labels.append(int(k * divisor))
@@ -188,10 +190,18 @@ def train_index(threshold, use_threshold, distribution, path):
 
     # 现在是full train模式, 全部的数据都用作训练
     global TOTAL_NUMBER  # 现在还是1500
-    TOTAL_NUMBER = data.shape[0]  # 现在变成了1000, 被覆盖了
+    if TOTAL_NUMBER <= data.shape[0]:  # TOTAL_NUMBER满足改data
+        print("数据总项数为: %d, 使用的数据项数为: %d" % (data.shape[0], TOTAL_NUMBER))
+        data = data[:TOTAL_NUMBER]
+    else:  # TOTAL_NUMBER不满足, 改TOTAL_NUMBER
+        print("所要求的%d项数据无法满足!!!, 将使用全部共%d项数据..." % (TOTAL_NUMBER, data.shape[0]))
+        TOTAL_NUMBER = data.shape[0]  # 现在变成了1000, 被覆盖了
+
+    # todo 极其重要, 后面出现第一阶段模型的预测出现在偏最后一个模型的位置, 感觉跟标签未归一化有关.
+    # todo 极其重要, 对于dev分支, 也即输入数据的维度是6的时候, 输入的归一化感觉很重要.
+    # todo 及其重要, dev分支的bug可能跟key是list, 而不是数值有关, 调试的时候注意一下.
+    print('正在加载数据到内存...')
     for i in range(data.shape[0]):
-        # train_set_x.append(data.ix[i, 0])
-        # train_set_y.append(data.ix[i, 1])
         train_set_x.append(data.iloc[i, 0])
         train_set_y.append(data.iloc[i, 1])
 
@@ -201,8 +211,6 @@ def train_index(threshold, use_threshold, distribution, path):
     # data = pd.read_csv("data/random_t.csv", header=None)
     # data = pd.read_csv("data/exponential_t.csv", header=None)
     # for i in range(data.shape[0]):
-    #     test_set_x.append(data.ix[i, 0])
-    #     test_set_y.append(data.ix[i, 1])
     #     test_set_x.append(data.iloc[i, 0])
     #     test_set_y.append(data.iloc[i, 1])
 

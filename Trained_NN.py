@@ -41,7 +41,7 @@ class ParameterPool(Enum):
     # RANDOM = Parameter(stages=[1, 10], cores=[[1, 1], [1, 1]], train_steps=[20000, 20000],
     #                    batch_sizes=[50, 50], learning_rates=[0.0001, 0.0001], keep_ratios=[1.0, 1.0])
     # 改一下batch_size
-    RANDOM = Parameter(stages=[1, 10], cores=[[1, 1], [1, 1]], train_steps=[20000, 20000],
+    RANDOM = Parameter(stages=[1, 10], cores=[[1, 1], [1, 1]], train_steps=[2000, 2000],
                        batch_sizes=[100, 100], learning_rates=[0.0001, 0.0001], keep_ratios=[1.0, 1.0])
     LOGNORMAL = Parameter(stages=[1, 100], cores=[[1, 16, 16, 1], [1, 8, 1]], train_steps=[2000, 400],
                           batch_sizes=[100, 50], learning_rates=[0.0001, 0.001], keep_ratios=[1.0, 0.9])
@@ -151,6 +151,7 @@ class TrainedNN:
                                      self.keep_prob: self.keep_ratio})            
             # check every 100 steps
             if step % 100 == 0:
+                # 这里self.train_x的形状是3000, 1, 不用改, 因为是标量过来的
                 err = self.sess.run(self.cross_entropy, feed_dict={self.h_fc_drop[0]: np.array([self.train_x]).T,
                                                                    self.y_: np.array([self.train_y]).T,
                                                                    self.keep_prob: 1.0})  # 测试的时候不用dropout操作
