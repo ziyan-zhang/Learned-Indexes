@@ -1,5 +1,4 @@
 # Main File for Learned Index
-
 from __future__ import print_function
 import pandas as pd
 from Trained_NN import TrainedNN, AbstractNN, ParameterPool
@@ -26,8 +25,8 @@ class NpEncoder(json.JSONEncoder):
 # 原文链接：https://blog.csdn.net/Zhou_yongzhe/article/details/87692052
 
 # Setting
-TOTAL_NUMBER = 200
-BLOCK_SIZE = 10  # todo: 这里两个变量的意义
+TOTAL_NUMBER = 15000
+BLOCK_SIZE = 1000  # todo: 这里两个变量的意义
 
 # todo 这里的这两个值, 有必要跟vreat_data里面的一样吗
 # 一个性能差距几乎已经很小的结果↓
@@ -80,18 +79,21 @@ def hybrid_training(threshold, use_threshold, stage_nums, core_nums, train_step_
     test_inputs = test_data_x  # todo 简单: 好像没有测试test集合?
     for i in range(0, stage_length):  # 两个阶级. self.core_nums两个列表, 为两个阶级分别指定全连接节点数量
         for j in tqdm(range(0, stage_nums[i])):  # 两个阶级各1, 10组数据.
+            print('A: 训练模型: 阶级-模块: %d-%d. 训练数据项数: %d' % (i, j, len(tmp_labels[i][j])))
             if len(tmp_labels[i][j]) == 0:
+                # print('无数据导致返回')
                 continue  # todo: 简单: 没有分到数据是什么情况?
             inputs = tmp_inputs[i][j]
             labels = []
             test_labels = []
             if i == 0:
-                # first stage, calculate how many models in next stage
-                divisor = stage_nums[i + 1] * 1.0 / (TOTAL_NUMBER / BLOCK_SIZE)
-                # 数据集的总量除以block的大小, 结果是数据集实际装满了多少个block (TOTAL_NUMBER / BLOCK_SIZE)
-                # 模型数除以block数, 结果是一个有效block对应divisor个下层模型.
-                # 如果下层模型多, 比如是有效block的三倍数量. 则divisor=3, 也即一个block对应三个模型.
-                # 第一层的key本来是根据BLOCK_SIZE确定的, todo 至少应该是这样, 确认下
+                # 第一个stage, 决定了下一个stage哪个模块负责哪些数据, 非常重要
+                block_nums = TOTAL_NUMBER / BLOCK_SIZE
+                divisor = stage_nums[i + 1] * 1.0 / block_nums
+                print("总数据量%d, 每个block大小%d, 数据集能装的block数%d" %(TOTAL_NUMBER, BLOCK_SIZE, block_nums))
+                print("第二阶段模型数%d, 数据装成的block数%d, 每个block对应的模型数%d" %(stage_nums[i+1], block_nums, divisor))
+                # divisor: 模型数除以block数, 结果是一个有效block对应divisor个下层模型. 其倒数为一个模型负责的block数
+                # todo: 第一层的key本来是根据BLOCK_SIZE确定的, 根据block序号确定会不会更好?
                 for k in tmp_labels[i][j]:
                     # 对key进行缩放.
                     labels.append(int(k * divisor))
@@ -100,11 +102,13 @@ def hybrid_training(threshold, use_threshold, stage_nums, core_nums, train_step_
             else:  # 这里设定的是第一层的标签需要缩放, 后面不需要. todo 应该不适配后面几层模型数量不一样多的情况
                 labels = tmp_labels[i][j]
                 test_labels = test_data_y
-            # train model                    
+            # train model
+            print('B: 训练模型: 阶级-模块: %d-%d. 训练数据项数: %d' % (i, j, len(tmp_labels[i][j])))  # B能显示证明该模块有数据, 没有被return掉
+
             tmp_index = TrainedNN(threshold[i], use_threshold[i], core_nums[i], train_step_nums[i], batch_size_nums[i],
                                     learning_rate_nums[i],
                                     keep_ratio_nums[i], inputs, labels, test_inputs, test_labels)            
-            tmp_index.train()      
+            tmp_index.train()
             # get parameters in model (weight matrix and bias matrix)      
             index[i][j] = AbstractNN(tmp_index.get_weights(), tmp_index.get_bias(), core_nums[i], tmp_index.cal_err())
             del tmp_index
@@ -129,6 +133,8 @@ def hybrid_training(threshold, use_threshold, stage_nums, core_nums, train_step_
             print("Using BTree")
             index[stage_length - 1][i] = BTree(2)
             index[stage_length - 1][i].build(tmp_inputs[stage_length - 1][i], tmp_labels[stage_length - 1][i])
+            # todo 极其重要, 要不然写的时候换成字符串得了. list是不可哈希的吗不是? 现在放到键上了, 还重载了比较大小函数. 感觉字符串更不容易出问题.
+    print("混合训练结束...")
     return index
 
 # main function for training idnex
@@ -148,7 +154,8 @@ def train_index(threshold, use_threshold, path):
     # set number of models for second stage (1 model deal with 10000 records)
     # todo: 在调试: 下面这句话是个自适应的操作, 我们把他隐掉, 使用自带的10个模型
     # stage_set[1] = int(round(data.shape[0] / 10000))
-
+    # todo 重要, 这几个stage_set[1]最后有个 / 1000, 10000注意一下, 要不要换成total_number
+    # todo 重要, 另一个主分支肯定也有上面那一条的问题
     core_set = parameter.core_set
     train_step_set = parameter.train_step_set
     batch_size_set = parameter.batch_size_set
@@ -157,7 +164,13 @@ def train_index(threshold, use_threshold, path):
 
     # 现在是full train模式, 全部的数据都用作训练
     global TOTAL_NUMBER  # 现在还是1500
-    TOTAL_NUMBER = data.shape[0]  # 现在变成了1000, 被覆盖了
+    if TOTAL_NUMBER <= data.shape[0]:
+        print("数据总项数为: %d, 使用的项数为: %d" %(data.shape[0], TOTAL_NUMBER))
+        data = data[:TOTAL_NUMBER]
+    else:
+        print("要求使用%d项数据, 无法满足!!! 使用全部数据集共%d项" %(TOTAL_NUMBER, data.shape[0]))
+        TOTAL_NUMBER = data.shape[0]
+    print('正在加载数据到内存...')
     for i in tqdm(range(data.shape[0])):
         x_single = data.iloc[i, 0]
         x_single = x_single.split(',')
@@ -177,7 +190,7 @@ def train_index(threshold, use_threshold, path):
     #     test_set_y.append(data.iloc[i, 1])
 
     print("*************start Learned NN************")
-    print("Start Train")
+    print("开始训练NN")
     start_time = time.time()
     # train index
     trained_index = hybrid_training(threshold, use_threshold, stage_set, core_set, train_step_set, batch_size_set, learning_rate_set,
@@ -317,7 +330,7 @@ def sample_train(threshold, use_threshold, training_percent, path):
     parameter = ParameterPool.RANDOM.value  # todo: 这里parameter用了RANDOM的, 不一定合适
 
     stage_set = parameter.stage_set
-    stage_set[1] = int(data.shape[0] * training_percent / 10000)
+    stage_set[1] = int(data.shape[0] * training_percent / 1000)
     core_set = parameter.core_set
     train_step_set = parameter.train_step_set
     batch_size_set = parameter.batch_size_set

@@ -3,6 +3,7 @@ import tensorflow as tf
 import numpy as np
 from enum import Enum
 from functools import wraps
+from progressbar import *
 
 # using cache
 def memoize(func):
@@ -10,11 +11,23 @@ def memoize(func):
 
     @wraps(func)  # @wraps(func)作用: 不改变使用装饰器原有函数的结构(如name, doc)
     def wrapper(*args):
-        if args in memo:
-            return memo[args]
+        # todo 这里的更改是强行填bug: 把list换成字符串形式使其可哈希, 具体意义待看
+        if isinstance(args, tuple):  # 也是强行填bug, 具体在哪不知道
+            # print(args)
+            args_new = []
+            for i in range(len(args)):
+                if type(args[i]) == list:
+                    args_new.append(str(args[i]))
+                else:
+                    args_new.append(args[i])
+            args_new = tuple(args_new)
         else:
-            rv = func(*args)
-            memo[args] = rv
+            args_new = args
+        if args_new in memo:
+            return memo[args_new]
+        else:
+            rv = func(*args_new)
+            memo[args_new] = rv
             return rv
 
     return wrapper
@@ -34,7 +47,7 @@ class ParameterPool(Enum):
     # RANDOM = Parameter(stages=[1, 10], cores=[[1, 1], [1, 1]], train_steps=[20000, 20000],
     #                    batch_sizes=[50, 50], learning_rates=[0.0001, 0.0001], keep_ratios=[1.0, 1.0])
     # 改一下batch_size
-    RANDOM = Parameter(stages=[1, 10], cores=[[6, 1], [1, 1]], train_steps=[20000, 20000],
+    RANDOM = Parameter(stages=[1, 10], cores=[[6, 1], [6, 1]], train_steps=[2000, 2000],
                        batch_sizes=[100, 100], learning_rates=[0.0001, 0.0001], keep_ratios=[1.0, 1.0])
     # LOGNORMAL = Parameter(stages=[1, 100], cores=[[1, 16, 16, 1], [1, 8, 1]], train_steps=[2000, 400],
     #                       batch_sizes=[100, 50], learning_rates=[0.0001, 0.001], keep_ratios=[1.0, 0.9])
@@ -92,7 +105,7 @@ class TrainedNN:
         self.test_y = np.array([test_y]).T
         self.sess = tf.Session()
         self.batch = 1
-        self.batch_x = np.array([self.train_x[0:self.batch_size]]).T
+        self.batch_x = np.array(self.train_x[0:self.batch_size])
         self.batch_y = np.array([self.train_y[0:self.batch_size]]).T
         self.y_ = tf.placeholder(tf.float32, shape=[None, self.core_nums[-1]])
         self.w_fc = []
@@ -108,11 +121,11 @@ class TrainedNN:
     # get next batch of data
     def next_batch(self):
         if self.batch * self.batch_size + self.batch_size < len(self.train_x):
-            self.batch_x = np.array([self.train_x[self.batch * self.batch_size:(self.batch + 1) * self.batch_size]]).T
+            self.batch_x = np.array(self.train_x[self.batch * self.batch_size:(self.batch + 1) * self.batch_size])
             self.batch_y = np.array([self.train_y[self.batch * self.batch_size:(self.batch + 1) * self.batch_size]]).T
             self.batch += 1
         else:
-            self.batch_x = np.array([self.train_x[self.batch * self.batch_size:len(self.train_x)]]).T
+            self.batch_x = np.array(self.train_x[self.batch * self.batch_size:len(self.train_x)])
             self.batch_y = np.array([self.train_y[self.batch * self.batch_size:len(self.train_y)]]).T
             self.batch = 0
 
@@ -128,13 +141,18 @@ class TrainedNN:
         
         last_err = 0
         err_count = 0
-        for step in range(0, self.train_step_nums):
+        print('开始训练, 按epoch')
+        progress = ProgressBar()
+        for step in progress(range(0, self.train_step_nums)):
+            # print("当前step: %d, 共: %d" % (step, self.train_step_nums))  # 正常运行没有撑过这个epoch
+            # print('当前batch大小x: %d, y: %d' % (len(self.batch_x), len(self.batch_y)))
             self.sess.run(self.train_step,  # self.train_step里面包含了优化器和优化的指标. 每个Session().run都要用
                           feed_dict={self.h_fc_drop[0]: self.batch_x, self.y_: self.batch_y,
-                                     self.keep_prob: self.keep_ratio})            
+                                     self.keep_prob: self.keep_ratio})
+            # print()
             # check every 100 steps
             if step % 100 == 0:
-                err = self.sess.run(self.cross_entropy, feed_dict={self.h_fc_drop[0]: np.array([self.train_x]).T,
+                err = self.sess.run(self.cross_entropy, feed_dict={self.h_fc_drop[0]: np.array(self.train_x),
                                                                    self.y_: np.array([self.train_y]).T,
                                                                    self.keep_prob: 1.0})  # 测试的时候不用dropout操作
                 # print("cross_entropy: %f" % err)  # 把这句话注释掉
@@ -152,11 +170,12 @@ class TrainedNN:
                         return
                 last_err = err
 
+
             self.next_batch()  # 换成下一轮的batch_x, batch_y, 并且使batch标号+1或归0
 
     # calculate mean error
     def cal_err(self):  # 与train中每100个epoch执行一次的计算误差操作是一样的, 只不过执行时机不同
-        mean_err = self.sess.run(self.cross_entropy, feed_dict={self.h_fc_drop[0]: np.array([self.train_x]).T,
+        mean_err = self.sess.run(self.cross_entropy, feed_dict={self.h_fc_drop[0]: np.array(self.train_x),
                                                                 self.y_: np.array([self.train_y]).T,
                                                                 self.keep_prob: 1.0})
         return mean_err
@@ -171,7 +190,7 @@ class TrainedNN:
         weights = []
         for i in range(len(self.core_nums) - 1):  # self.core_nums表示网络的层数, 比如一个隐藏层, self.core_nums=3, 权重矩阵数就是2.
             # 这里不用run吧, 而且后面的feed_dict参数的意义估计也不大
-            weights.append(self.sess.run(self.w_fc[i], feed_dict={self.h_fc_drop[0]: np.array([self.train_x]).T,
+            weights.append(self.sess.run(self.w_fc[i], feed_dict={self.h_fc_drop[0]: np.array(self.train_x),
                                                                        self.y_: np.array([self.train_y]).T,
                                                                        self.keep_prob: 1.0}).tolist())
         return weights
@@ -180,7 +199,7 @@ class TrainedNN:
     def get_bias(self):
         bias = []
         for i in range(len(self.core_nums) - 1):
-            bias.append(self.sess.run(self.b_fc[i], feed_dict={self.h_fc_drop[0]: np.array([self.train_x]).T,
+            bias.append(self.sess.run(self.b_fc[i], feed_dict={self.h_fc_drop[0]: np.array(self.train_x),
                                                                     self.y_: np.array([self.train_y]).T,
                                                                     self.keep_prob: 1.0}).tolist())
         return bias

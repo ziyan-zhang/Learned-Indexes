@@ -85,7 +85,10 @@ class BTree:
         c_node.numberOfKeys = self.degree - 1  # 子节点c_node中间及右半部分关闭访问.
         # 这里体现了管写不管改的思想, 因为是面向磁盘的数据结构, 效率优先, 一点空间不算什么, 但是删除它费时间
         j = p_node.numberOfKeys + 1  # p_node下一个能写的位置索引
+        # print('p_node的键数: ', p_node.numberOfKeys)
         while j > i + 1:  # j索引从最后一个孩子索引到第i+1个孩子, 父节点的孩子右移. 腾出孩子位置给新节点
+            # todo: 重要: >改成了>=, 有撤销了, 怕乱
+            # print('i: %d, j: %d' % (i, j))
             p_node.children[j + 1] = p_node.children[j]
             j -= 1
         # 此时j索引到的是下标为i+1的孩子位置, 接上新建的孩子节点
@@ -260,6 +263,17 @@ class BTree:
     def write_at(self, index, a_node):
         self.nodes[index] = a_node
 
+def gt_items(a, b, i):  # 形如 29,1,2018,20,36,31
+    order = [2, 1, 0, 3, 4, 5]
+    while i < 6:
+        if a[order[i]] > b[order[i]]:
+            return True
+        elif a[order[i]] < b[order[i]]:
+            return False
+        else:
+            return gt_items(a, b, i+1)
+    return True
+
 # Value in Node
 class Item():
     def __init__(self, k, v):
@@ -267,10 +281,7 @@ class Item():
         self.v = v
 
     def __gt__(self, other):
-        if self.k > other.k:
-            return True
-        else:
-            return False
+        return gt_items(self.k, other.k, 0)
 
     def __ge__(self, other):
         if self.k >= other.k:
