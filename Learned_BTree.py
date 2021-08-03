@@ -158,9 +158,14 @@ def train_index(threshold, use_threshold, path):
     # 现在是full train模式, 全部的数据都用作训练
     global TOTAL_NUMBER  # 现在还是1500
     TOTAL_NUMBER = data.shape[0]  # 现在变成了1000, 被覆盖了
-    for i in range(data.shape[0]):
-        train_set_x.append(data.iloc[i, 1])
-        train_set_y.append(data.iloc[i, 4])  # test_y即是位置, 也即
+    for i in tqdm(range(data.shape[0])):
+        x_single = data.iloc[i, 0]
+        x_single = x_single.split(',')
+        x_list = []
+        for item in x_single:
+            x_list.append(int(item))
+        train_set_x.append(x_list)
+        train_set_y.append(data.iloc[i, 1])  # test_y即是位置, 也即
 
     # 在这个模式下, 如果要使用测试集, 也是使用全部的训练集作为测试集
     test_set_x = train_set_x[:]
