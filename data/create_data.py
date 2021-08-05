@@ -7,7 +7,7 @@ import random
 # SIZE = 100000
 SIZE = 30000
 BLOCK_SIZE = 1000
-
+DIS_NUM = 3
 
 class Distribution(Enum):
     RANDOM = 0
@@ -47,9 +47,9 @@ toStorePath = {
 }
 
 # create data
-def create_data(distribution, data_size=SIZE):  # SIZE = 100000, BLOCK_SIZE = 100
+def create_data(distribution, data_size=SIZE):  # SIZE = 30000, BLOCK_SIZE = 1000
     if distribution == Distribution.RANDOM:
-        data = random.sample(range(data_size * 2), data_size)
+        data = random.sample(range(data_size * DIS_NUM), data_size)
     elif distribution == Distribution.BINOMIAL:
         # data = np.random.binomial(100, 0.5, size=data_size)
         data = np.random.binomial(10, 0.5, size=data_size)
