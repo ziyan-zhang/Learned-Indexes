@@ -85,23 +85,24 @@ class BTree:
         c_node.numberOfKeys = self.degree - 1  # 子节点c_node中间及右半部分关闭访问.
         # 这里体现了管写不管改的思想, 因为是面向磁盘的数据结构, 效率优先, 一点空间不算什么, 但是删除它费时间
         j = p_node.numberOfKeys + 1  # p_node下一个能写的位置索引
+        # todo: 这里应该是 j = p_node.numberOfKeys
         # print('p_node的键数: ', p_node.numberOfKeys)
-        while j > i + 1:  # j索引从最后一个孩子索引到第i+1个孩子, 父节点的孩子右移. 腾出孩子位置给新节点
-            # todo: 重要: >改成了>=, 有撤销了, 怕乱
-            # print('i: %d, j: %d' % (i, j))
-            p_node.children[j + 1] = p_node.children[j]
+        while j > i:  # j索引从最后一个孩子索引到第i+1个孩子, 父节点的孩子右移. 腾出孩子位置给新节点
+            p_node.children[j] = p_node.children[j-1]
             j -= 1
         # 此时j索引到的是下标为i+1的孩子位置, 接上新建的孩子节点
-        p_node.children[j] = new_node.get_index()
+        p_node.children[i] = new_node.get_index()
         j = p_node.numberOfKeys  # j是键数, i是新的关键字要插入的位置
         while j > i:  # j索引从最后一个键索引到第i个键. 父节点的键右移.  # todo: 这里不应该是while j >= i吗,
             # 原来第i位置的不转移吗, 直接被覆盖?
-            p_node.items[j + 1] = p_node.items[j]
+            p_node.items[j] = p_node.items[j-1]
             j -= 1
         p_node.items[i] = c_node.items[self.degree - 1]  # c_node中间键送入上级中指定位置i
         p_node.numberOfKeys += 1  # 并且父节点关键字计数加一
 
     def insert(self, an_item):  # 这个应该是执行在节点对应的子树尺度上的, 而不是整棵树上的
+        if an_item.k == '20171129065904':
+            print()
         search_result = self.search(an_item)
         if search_result['found']:
             return None  # 插入的是原有的值, 无效插入
@@ -113,6 +114,7 @@ class BTree:
             s.isLeaf = False
             s.numberOfKeys = 0
             s.children[0] = r.get_index()
+            # print("在根节点插入新节点")
             self.split_child(s, 0, r)  # 将r作为子树放在s的位置0
             self.insert_not_full(s, an_item)
         else:  # 插入后的关键字个数小于m, 可直接插入
@@ -263,17 +265,6 @@ class BTree:
     def write_at(self, index, a_node):
         self.nodes[index] = a_node
 
-def gt_items(a, b, i):  # 形如 29,1,2018,20,36,31
-    order = [2, 1, 0, 3, 4, 5]
-    while i < 6:
-        if a[order[i]] > b[order[i]]:
-            return True
-        elif a[order[i]] < b[order[i]]:
-            return False
-        else:
-            return gt_items(a, b, i+1)
-    return True
-
 # Value in Node
 class Item():
     def __init__(self, k, v):
@@ -281,7 +272,10 @@ class Item():
         self.v = v
 
     def __gt__(self, other):
-        return gt_items(self.k, other.k, 0)
+        if self.k > other.k:
+            return True
+        else:
+            return False
 
     def __ge__(self, other):
         if self.k >= other.k:

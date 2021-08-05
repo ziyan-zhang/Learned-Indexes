@@ -1,4 +1,6 @@
+#-*- coding: utf-8 -*-
 # Main File for Learned Index
+
 from __future__ import print_function
 import pandas as pd
 from Trained_NN import TrainedNN, AbstractNN, ParameterPool
@@ -25,10 +27,10 @@ class NpEncoder(json.JSONEncoder):
 # 原文链接：https://blog.csdn.net/Zhou_yongzhe/article/details/87692052
 
 # Setting
-TOTAL_NUMBER = 15000
+TOTAL_NUMBER = 15790
 BLOCK_SIZE = 1000  # todo: 这里两个变量的意义
 
-# todo 这里的这两个值, 有必要跟vreat_data里面的一样吗
+# todo 这里的这两个值, 有必要跟create_data里面的一样吗
 # 一个性能差距几乎已经很小的结果↓
 # BLOCK_SIZE = 1000
 # TOTAL_NUMBER = 300000
@@ -46,7 +48,7 @@ useThresholdPool = [True, False]  # todo 一般: 这两个布尔值是干嘛的?
 
 # hybrid training structure, 2 stages
 def hybrid_training(threshold, use_threshold, stage_nums, core_nums, train_step_nums, batch_size_nums, learning_rate_nums,
-                    keep_ratio_nums, train_data_x, train_data_y, test_data_x, test_data_y):
+                    keep_ratio_nums, train_data_x, train_key_x, train_data_y, test_data_x, test_data_y):
     """
     Args:
         threshold:  从NN替换为BTree的误差限度 todo:可能不太准确
@@ -69,12 +71,14 @@ def hybrid_training(threshold, use_threshold, stage_nums, core_nums, train_step_
     # initial
     # tmp_inputs和tmp_labels是三级列表, 每个单位是一个空列表. index是一个二级列表, 每个单位是一个None.
     tmp_inputs = [[[] for i in range(col_num)] for i in range(stage_length)]
+    tmp_keys = [[[] for i in range(col_num)] for i in range(stage_length)]
     tmp_labels = [[[] for i in range(col_num)] for i in range(stage_length)]
     index = [[None for i in range(col_num)] for i in range(stage_length)]
     # todo: 微小问题, 这里为第一个个阶级的模型开辟的空间有点大, 一个就行了, 开辟了10个
 
     # 给训练数据和标签赋值
     tmp_inputs[0][0] = train_data_x
+    tmp_keys[0][0] = train_key_x
     tmp_labels[0][0] = train_data_y
     test_inputs = test_data_x  # todo 简单: 好像没有测试test集合?
     for i in range(0, stage_length):  # 两个阶级. self.core_nums两个列表, 为两个阶级分别指定全连接节点数量
@@ -121,6 +125,7 @@ def hybrid_training(threshold, use_threshold, stage_nums, core_nums, train_step_
                     if p > stage_nums[i + 1] - 1:  # 超范围的预测处理方式是使他在范围顶端
                         p = stage_nums[i + 1] - 1
                     tmp_inputs[i + 1][p].append(tmp_inputs[i][j][ind])
+                    tmp_keys[i + 1][p].append(tmp_keys[i][j][ind])
                     tmp_labels[i + 1][p].append(tmp_labels[i][j][ind])
 
     # 现在处理最后一个模块的事情, 也即用BTree代替部分模块.
@@ -132,7 +137,7 @@ def hybrid_training(threshold, use_threshold, stage_nums, core_nums, train_step_
             # replace model with BTree if mean error > threshold
             print("Using BTree")
             index[stage_length - 1][i] = BTree(2)
-            index[stage_length - 1][i].build(tmp_inputs[stage_length - 1][i], tmp_labels[stage_length - 1][i])
+            index[stage_length - 1][i].build(tmp_keys[stage_length - 1][i], tmp_labels[stage_length - 1][i])
             # todo 极其重要, 要不然写的时候换成字符串得了. list是不可哈希的吗不是? 现在放到键上了, 还重载了比较大小函数. 感觉字符串更不容易出问题.
     print("混合训练结束...")
     return index
@@ -143,6 +148,7 @@ def train_index(threshold, use_threshold, path):
     # data = pd.read_csv("data/exponential_t.csv", header=None)
     data = pd.read_csv(path, header=0)
     train_set_x = []
+    train_key_x = []
     train_set_y = []
     test_set_x = []
     test_set_y = []
@@ -172,16 +178,19 @@ def train_index(threshold, use_threshold, path):
         TOTAL_NUMBER = data.shape[0]
     print('正在加载数据到内存...')
     for i in tqdm(range(data.shape[0])):
-        x_single = data.iloc[i, 0]
-        x_single = x_single.split(',')
+        x_i = data.iloc[i, 0]
+        x_i_key = x_i.replace(',', '')
+        x_i = x_i.split(',')
         x_list = []
-        for item in x_single:
+        for item in x_i:
             x_list.append(int(item))
         train_set_x.append(x_list)
+        train_key_x.append(x_i_key)
         train_set_y.append(data.iloc[i, 1])  # test_y即是位置, 也即
 
     # 在这个模式下, 如果要使用测试集, 也是使用全部的训练集作为测试集
     test_set_x = train_set_x[:]
+    test_key_x = train_key_x[:]
     test_set_y = train_set_y[:]
     # data = pd.read_csv("data/random_t.csv", header=None)
     # data = pd.read_csv("data/exponential_t.csv", header=None)
@@ -194,7 +203,7 @@ def train_index(threshold, use_threshold, path):
     start_time = time.time()
     # train index
     trained_index = hybrid_training(threshold, use_threshold, stage_set, core_set, train_step_set, batch_size_set, learning_rate_set,
-                                    keep_ratio_set, train_set_x, train_set_y, [], [])
+                                    keep_ratio_set, train_set_x, train_key_x, train_set_y, [], [])
     end_time = time.time()
     learn_time = end_time - start_time
     print("训练神经网络所用时间", learn_time)
@@ -208,7 +217,11 @@ def train_index(threshold, use_threshold, path):
         if pre1 > stage_set[1] - 1:
             pre1 = stage_set[1] - 1
         # predict position
-        pre2 = trained_index[1][pre1].predict(test_set_x[ind])
+        # if trained_index[1][pre1]
+        try:
+            pre2 = trained_index[1][pre1].predict(test_set_x[ind])
+        except:
+            pre2 = trained_index[1][pre1].predict(test_key_x[ind])
         err += abs(pre2 - test_set_y[ind])
         # 专为调试
         if ind == 1500:
