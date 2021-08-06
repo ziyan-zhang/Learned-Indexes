@@ -42,7 +42,8 @@ vec_t ReadData(DataDistribution dataDis)
  void HybridTraining(vector<vector<TrainedNN>> trainedIndex, int threshold, VEC_INT* stages, vector<VEC_INT>* core_nums, vector<vec_t>* train_set_x, vector<vec_t>* train_set_y, vector<vec_t>* test_set_x, vector<vec_t>* test_set_y)
 {
 	int stages_length = stages->size();
-	vector<vector<vector<vec_t>>> tmp_inputs;
+	vector<vector<vector<vec_t>>> tmp_inputs;  //vec_t是单条记录；vector<vec_t>是一个模块对应的好几条记录。
+	//vector<vector<vec_t>>是一个stage的好多模块对应的记录；vectoe<vector<vector<vec_t>>>是多stage，多模块，对应的好几条记录
 	vector<vector<vector<vec_t>>> tmp_labels;
 	tmp_inputs.resize(stages_length);
 	tmp_labels.resize(stages_length);
