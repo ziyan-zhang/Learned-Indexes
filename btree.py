@@ -97,7 +97,7 @@ class BTree:
         # 孩子右移位; 插入新的孩子
         for i in range(p_node.numberOfKeys, i, -1):  # 这两个for注意第二个值并取不到
             p_node.children[i+1] = p_node.children[i]
-        p_node.children[i] = new_node.get_index()
+        p_node.children[i+1] = new_node.get_index()  # 新key位置是i, 新孩子位置是i+1
 
         # 关键字右移位; 插入新的关键字; 关键字个数加一
         for i in range(p_node.numberOfKeys-1, i-1, -1):  # 这两个for注意第二个值并取不到
