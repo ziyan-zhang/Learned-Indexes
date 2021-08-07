@@ -72,32 +72,37 @@ class BTree:
             return -1
         return a_node.items[search_result['nodeIndex']].v
 
-    def split_child(self, p_node, i, c_node):  # 将c_node分裂, 中间关键字放在p_node的位置i上,
-        # 右半部分作为新节点放在i孩子位置, 然后将右半部分关闭访问
+    def split_child(self, p_node, i, c_node):  # c_node右半部分作为新节点放在i孩子位置, 然后将右半部分关闭访问
+        # 第1/2步, 从要分裂的, 被装满的, c_node取得新节点new_node.
         new_node = self.get_free_node()
+
+        # 新节点叶属性继承自, 要分裂的孩子节点c_node, 关键字数是self.degree-1.
         new_node.isLeaf = c_node.isLeaf  # 新节点是不是叶子结点也从已经爆的旧当前孩子节点继承
         new_node.numberOfKeys = self.degree - 1  # 关键字数4等于度数5减一
+
+        # 新节点同时继承c_node的: 关键字, 和孩子(非叶的话).
+        # 关键字: 将child后M-1个(共2M-1个)key拷贝给新节点
         for j in range(0, self.degree - 1):
             new_node.items[j] = c_node.items[j + self.degree]  # 新节点是子节点c_node右半部分
-        if c_node.isLeaf is False:  # 如果子节点不为空, 新节点还要继承子节点的孩子
+
+        # 孩子: 如果c_node不是叶子结点, 新节点还要继承c_node的后M个(共2M个)孩子
+        if c_node.isLeaf is False:  # 如果子节点不为空, 新节点还要继承子节点的右M-1个孩子
             for j in range(0, self.degree):
                 new_node.children[j] = c_node.children[j + self.degree]
-        c_node.numberOfKeys = self.degree - 1  # 子节点c_node中间及右半部分关闭访问.
-        # 这里体现了管写不管改的思想, 因为是面向磁盘的数据结构, 效率优先, 一点空间不算什么, 但是删除它费时间
-        j = p_node.numberOfKeys + 1  # p_node下一个能写的位置索引
-        # todo: 这里应该是 j = p_node.numberOfKeys
-        # print('p_node的键数: ', p_node.numberOfKeys)
-        while j > i:  # j索引从最后一个孩子索引到第i+1个孩子, 父节点的孩子右移. 腾出孩子位置给新节点
-            p_node.children[j] = p_node.children[j-1]
-            j -= 1
-        # 此时j索引到的是下标为i+1的孩子位置, 接上新建的孩子节点
+
+        # 原来被装满的子节点c_node中间及右M-1个部分关闭访问, 只留前M-1个. 面向磁盘的数据结构, 管写不管改.
+        c_node.numberOfKeys = self.degree - 1
+
+        # 第2/2步, p_node的关键字和孩子节点分别右移, 并装入新的.
+        # 孩子右移位; 插入新的孩子
+        for i in range(p_node.numberOfKeys, i, -1):  # 这两个for注意第二个值并取不到
+            p_node.children[i+1] = p_node.children[i]
         p_node.children[i] = new_node.get_index()
-        j = p_node.numberOfKeys  # j是键数, i是新的关键字要插入的位置
-        while j > i:  # j索引从最后一个键索引到第i个键. 父节点的键右移.  # todo: 这里不应该是while j >= i吗,
-            # 原来第i位置的不转移吗, 直接被覆盖?
-            p_node.items[j] = p_node.items[j-1]
-            j -= 1
-        p_node.items[i] = c_node.items[self.degree - 1]  # c_node中间键送入上级中指定位置i
+
+        # 关键字右移位; 插入新的关键字; 关键字个数加一
+        for i in range(p_node.numberOfKeys-1, i-1, -1):  # 这两个for注意第二个值并取不到
+            p_node.items[i+1] = p_node.items[i]
+        p_node.items[i] = c_node.items[self.degree-1]
         p_node.numberOfKeys += 1  # 并且父节点关键字计数加一
 
     def insert(self, an_item):  # 这个应该是执行在节点对应的子树尺度上的, 而不是整棵树上的
@@ -316,18 +321,17 @@ def b_tree_main():
 
 
 def b_tree_main2():
-    # path = "last_data.csv"
-    path = "data\\normal_s.csv"
-
-    data = pd.read_csv(path)
     b = BTree(2)  # 这里的degree指的是 math.ceil(M/2) - 1
-    i = 0
-    while (i in range(data.shape[0])) and (i <= 12):
-        b.insert(Item(data.iloc[i, 0], data.iloc[i, 1]))
-        i += 1
+    b.insert(Item(10, 10))
+    b.insert(Item(20, 20))
+    b.insert(Item(30, 30))
+    b.insert(Item(40, 40))
+    b.insert(Item(50, 50))
+    b.insert(Item(25, 25))
+    b.insert(Item(35, 35))
+    b.insert(Item(36, 36))
 
-    pos = b.predict(8)
-    print(pos)
+    print()
 
 
 if __name__ == '__main__':
