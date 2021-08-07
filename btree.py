@@ -73,35 +73,36 @@ class BTree:
         return a_node.items[search_result['nodeIndex']].v
 
     def split_child(self, p_node, i, c_node):  # 将c_node分裂, 中间关键字放在p_node的位置i上,
-        # 第1/2步, 从要分裂的, 被装满的, c_node取得新节点new_node.
+        # 第1/2步, 依据要分裂的, 被装满的, c_node建立新节点new_node.
         new_node = self.get_free_node()
 
-        # 新节点叶属性继承自, 要分裂的孩子节点c_node, 关键字数是self.degree-1.
+        # 新节点的idLeaf继承自c_node, 关键字数是self.degree-1.
         new_node.isLeaf = c_node.isLeaf  # 新节点是不是叶子结点也从已经爆的旧当前孩子节点继承
         new_node.numberOfKeys = self.degree - 1  # 关键字数4等于度数5减一
 
-        # 新节点同时继承c_node的: 关键字, 和孩子(非叶的话).
-        # 关键字: 将child后M-1个(共2M-1个)key拷贝给新节点
-        for j in range(0, self.degree - 1):
-            new_node.items[j] = c_node.items[j + self.degree]  # 新节点是子节点c_node右半部分
+        # 关键字: 将child后M-1个key(共2M-1个key, child满载)拷贝给新节点
+        # 位于正中间的(第M个)key的下标为M-1, 因此拷贝从M下标开始, 到2M-2下标(第M-1, 也即末个key)结束, 共M-1个key
+        for k in range(0, self.degree - 1):
+            new_node.items[k] = c_node.items[k + self.degree]  # 新节点是子节点c_node右半部分
 
-        # 孩子: 如果c_node不是叶子结点, 新节点还要继承c_node的后M个(共2M个)孩子
+        # 孩子: 如果c_node不是叶子结点, 还要将c_node的后M个(共2M个)孩子拷贝给新节点
+        # 位于正中间的(第M个)key的下标为M-1, 因此拷贝从他右边的 M child下标开始, 到2M-1下标(第2M个, 也即末个, key)结束, 共M个child
         if c_node.isLeaf is False:  # 如果子节点不为空, 新节点还要继承子节点的右M-1个孩子
-            for j in range(0, self.degree):
-                new_node.children[j] = c_node.children[j + self.degree]
+            for k in range(0, self.degree):
+                new_node.children[k] = c_node.children[k + self.degree]
 
         # 原来被装满的子节点c_node中间及右M-1个部分关闭访问, 只留前M-1个. 面向磁盘的数据结构, 管写不管改.
         c_node.numberOfKeys = self.degree - 1
 
         # 第2/2步, p_node的关键字和孩子节点分别右移, 并装入新的.
         # 孩子右移位; 插入新的孩子
-        for i in range(p_node.numberOfKeys, i, -1):  # 这两个for注意第二个值并取不到
-            p_node.children[i+1] = p_node.children[i]
-        p_node.children[i] = new_node.get_index()
+        for k in range(p_node.numberOfKeys, i, -1):  # 这两个for注意第二个值并取不到
+            p_node.children[k+1] = p_node.children[k]
+        p_node.children[i+1] = new_node.get_index()  # 新key的索引i, child的是i+1
 
         # 关键字右移位; 插入新的关键字; 关键字个数加一
-        for i in range(p_node.numberOfKeys-1, i-1, -1):  # 这两个for注意第二个值并取不到
-            p_node.items[i+1] = p_node.items[i]
+        for k in range(p_node.numberOfKeys-1, i-1, -1):  # 这两个for注意第二个值并取不到
+            p_node.items[k+1] = p_node.items[k]
         p_node.items[i] = c_node.items[self.degree-1]
         p_node.numberOfKeys += 1  # 并且父节点关键字计数加一
 
@@ -123,6 +124,7 @@ class BTree:
             self.insert_not_full(r, an_item)
 
     def insert_not_full(self, inNode, anItem):  # insertNode, 表示在哪个节点插入
+        # 这个人对下标的引用明显没有c++那个实现引用的好, 不过straight forward.
         """inNode索引到的, 要插入在这里的节点"""
         i = inNode.numberOfKeys - 1  # 最后一个关键字(item)的索引. 也即i指向了最大的那个key
         if inNode.isLeaf:  # 新项是叶子节点好说, 直接把更大的项右移一位, 然后把新项放入对应位置
