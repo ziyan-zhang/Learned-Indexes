@@ -27,6 +27,16 @@ class BTreeNode:
         return self.index
 
     def search(self, b_tree, an_item):
+        """
+        Args:
+            b_tree: 要被查找的树
+            an_item:  要被查找的关键字
+            self: 当前的节点
+
+        Returns:
+            如果关键字在该节点存在, 返回{'found': True, 'fileIndex': 关键字对应的查找节点(文件)索引, 'nodeIndex': 关键字在当前查找节点上的索引};
+            如果关键字在该节点不存在, 往下查找, 返回{'found': False, 'fileIndex': self.index查找到的最后一个节点的索引, 'nodeIndex': i - 1, 也即最后一个值小于item的关键字索引}
+        """
         i = 0
         while i < self.numberOfKeys and an_item > self.items[i]:
             i += 1
@@ -156,10 +166,37 @@ class BTree:
         r = self.rootNode
         self.delete_in_node(r, an_item, search_result)
 
+    def merge_child(self, root, pos, y, z):  # 把z合并到y上
+        # 将z中后半部分的节点拷贝到y的后半部分, root.key[pos]下降为y中间节点
+        y.numberOfKeys = 2*self.degree-1
+        for i in range(self.degree, 2*self.degree-1, 1):
+            y.items[i] = z.items[i-self.degree]
+        y.items[self.degree-1] = root.items[pos]
+
+        # 如果z不是叶子节点, 需要拷贝z的孩子
+        if (z.isLeaf == False):
+            for i in range(self.degree, 2*self.degree, 1):
+                y.children[i] = z.children[i-self.degree]
+
+        #由于root.items[pos]下降到y中, 更新root的key和pointer
+        for j in range(pos+1, root.numberOfKeys, 1):
+            root.items[j-1] = root.items[j]
+            root.children[j] = root.children[j+1]
+
+        # 两次整理内存, 第1次包括判断删除后后不会引起回溯合并
+        root.numberOfKeys -= 1
+        if root.numberOfKeys == 0:
+            del self.nodes[root.index]
+            self.set_root_node(y)
+
+        del self.nodes[z.get_index()]
+
     def delete_in_node(self, a_node, an_item, search_result):  # todo:目前只是通过实验确认了插入似乎可以正常运行, 删除查找等还没看.
         """从a_node中删除元素an_item, 参考信息为search_result"""
-        if a_node.index == search_result['fileIndex']:
+        # 第一种情况: 如果在当前节点a_node找到了要删除的an_item
+        if a_node.index == search_result['fileIndex']:  # a_node.index != search_result['fileIndex']意思是要删除的节点不是当前节点
             i = search_result['nodeIndex']  # nodeIndex是在Node里面的索引
+            # 如果是叶子结点, 直接通过覆写和改numberOfKeys删除
             if a_node.isLeaf:
                 while i < a_node.numberOfKeys - 1:  # 如果要删除的元素位于叶子结点, 则索引之后的元素通通前移一位
                     a_node.items[i] = a_node.items[i + 1]
@@ -183,61 +220,76 @@ class BTree:
                     for j in range(i, a_node.numberOfKeys - 1):
                         a_node.items[j] = a_node.items[j + 1]
                         a_node.children[j + 1] = a_node.children[j + 2]
+                    # 这里, 因为删除没有从root开始查起, 所以可能导致a_node是根节点, 下沉完一个元素之后变成了空
+                    # 也即,  第一层的查找, root节点一个关键字, 两个孩子都是M-1个关键字
+                    # 因为删除是从上到下走的, 这里没有对第一次删除(在root节点时)进行一次讨论
                     a_node.numberOfKeys -= 1
                     if a_node.numberOfKeys == 0:
                         del self.nodes[a_node.get_index()]
                         self.set_root_node(left)
                     self.delete_in_node(left, an_item, {'found': True, 'fileIndex': left.index, 'nodeIndex': k})
+        # 第二种情况: 如果在当前节点a_node未找到要删除的an_item
         else:  # 也即a_node.index != search_result['fileIndex']
             i = 0
+            # todo: 这里重复查找了吧. if那里可以确定一个i, 通过比较关键字大小的话.
             # 如果当前节点没有, 则从孩子中一个一个找
             while i < a_node.numberOfKeys and self.get_node(a_node.children[i]).search(self, an_item)['found'] is False:
+                # 这里再次注释一下Node的serach功能
+                """
+                Args:
+                    b_tree: 要被查找的树
+                    an_item:  要被查找的关键字
+                    self: 当前的节点
+                Returns:
+                    如果关键字在该节点存在, 返回{'found': True, 'fileIndex': 关键字对应的查找节点(文件)索引, 'nodeIndex': 关键字在当前查找节点上的索引};
+                    如果关键字在该节点不存在, 往下查找, 返回
+                    {'found': False, 'fileIndex': self.index查找到的最后一个节点的索引, 
+                    'nodeIndex': i - 1, 也即最后一个值小于item的关键字索引}  
+                """
                 i += 1
-            c_node = self.get_node(a_node.children[i])  # 当前孩子节点i包含要删除的元素
-            if c_node.numberOfKeys < self.degree:  # 进行操作的前提条件, 不进入没有设置报错
-                j = i - 1
-                while j < i + 2 and self.get_node(a_node.children[j]).numberOfKeys < self.degree:
-                    j += 1
-                if j == i - 1:
-                    sNode = self.get_node(a_node.children[j])
+            # 这时的i: 如果b树中包含要找的关键字an_item, 那么一定是能够找到的. 找到的时候an_item位于a_node的第i个孩子节点
+            c_node = self.get_node(a_node.children[i])  # 当前孩子节点i包含要删除的元素. 注意这个时候的c_node可能是叶子节点了已经
+            # 根据节点位置定义左右兄弟, 注意左右兄弟并不总是存在
+            if i < a_node.numberOfKeys:
+                zNode = self.get_node(a_node.children[i+1])  # 从这个get_node可以看出, 这个版本的children是一个数, 而cpp版本的是一个指针
+            if i > 0:
+                pNode = self.get_node(a_node.children[i-1])
+
+            # 如果c_node的关键字数: =M-1, 借点后迭代删除; >M-1, 直接迭代删除; <M-1, 必是叶节点, 直接迭代删除. 后两者统一, 只不过叶节点首先判断, 运算更快
+            if c_node.numberOfKeys == self.degree-1:
+                if (i>0 and pNode.numberOfKeys > self.degree-1):
                     k = c_node.numberOfKeys
                     while k > 0:
                         c_node.items[k] = c_node.items[k - 1]
                         c_node.children[k + 1] = c_node.children[k]
                         k -= 1
                     c_node.children[1] = c_node.children[0]
+
                     c_node.items[0] = a_node.items[i - 1]
-                    c_node.children[0] = sNode.children[sNode.numberOfKeys]
+                    c_node.children[0] = pNode.children[pNode.numberOfKeys]
                     c_node.numberOfKeys += 1
-                    a_node.items[i - 1] = sNode.items[sNode.numberOfKeys - 1]
-                    sNode.numberOfKeys -= 1
-                elif j == i + 1:
-                    sNode = self.get_node(a_node.children[j])
+                    a_node.items[i - 1] = pNode.items[pNode.numberOfKeys - 1]
+                    pNode.numberOfKeys -= 1
+                elif (i<a_node.numberOfKeys and zNode.numberOfKeys>self.degree-1):
+                    zNode = self.get_node(a_node.children[j])
                     c_node.items[c_node.numberOfKeys] = a_node.items[i]
-                    c_node.children[c_node.numberOfKeys + 1] = sNode.children[0]
-                    a_node.items[i] = sNode.items[0]
-                    for k in range(0, sNode.numberOfKeys):
-                        sNode.items[k] = sNode.items[k + 1]
-                        sNode.children[k] = sNode.children[k + 1]
-                    sNode.children[k] = sNode.children[k + 1]
-                    sNode.numberOfKeys -= 1
-                else:
-                    j = i + 1
-                    sNode = self.get_node(a_node.children[j])
-                    c_node.items[c_node.numberOfKeys] = a_node.items[i]
-                    c_node.numberOfKeys += 1
-                    for k in range(0, sNode.numberOfKeys):
-                        c_node.items[c_node.numberOfKeys] = sNode.items[k]
-                        c_node.numberOfKeys += 1
-                    del self.nodes[sNode.index]
-                    for k in range(i, a_node.numberOfKeys - 1):
-                        a_node.items[i] = a_node.items[i + 1]
-                        a_node.children[i + 1] = a_node.items[i + 2]
-                    a_node.numberOfKeys -= 1
-                    if a_node.numberOfKeys == 0:
-                        del self.nodes[a_node.index]
-                        self.set_root_node(c_node)
-            self.delete_in_node(c_node, an_item, c_node.search(self, an_item))
+                    c_node.children[c_node.numberOfKeys + 1] = zNode.children[0]
+                    a_node.items[i] = zNode.items[0]
+                    for k in range(0, zNode.numberOfKeys):
+                        zNode.items[k] = zNode.items[k + 1]
+                        zNode.children[k] = zNode.children[k + 1]
+                    zNode.children[k] = zNode.children[k + 1]
+                    zNode.numberOfKeys -= 1
+                elif (i>0):  # 左右兄弟都不够借, 只能合并. 左右兄弟哪个有跟哪个合并, 先看左兄弟.
+                    # 现在左兄弟存在, 先将当前节点合并到左兄弟上
+                    self.merge_child(a_node, i-1, pNode, c_node)
+                    c_node = pNode
+                else:  # 没有左兄弟, 只能合并到右兄弟上
+                    self.merge_child(a_node, i, c_node, zNode)
+                self.delete_in_node(c_node, an_item, c_node.search(self, an_item))
+            else:
+                # 这里是上面if不满足, 也即当前节点关键字很多, 可以直接删除; 或者开始关键字不够, 但是已经借好了的情况
+                self.delete_in_node(c_node, an_item, c_node.search(self, an_item))
 
     def get_right_most(self, aNode):
         if aNode.children[aNode.numberOfKeys] is None:
@@ -329,6 +381,10 @@ def b_tree_main2():
     b.insert(Item(25, 25))
     b.insert(Item(35, 35))
     b.insert(Item(36, 36))
+    b.insert(Item(60, 60))
+    b.insert(Item(70, 70))
+
+    b.delete(10)
 
     print()
 
